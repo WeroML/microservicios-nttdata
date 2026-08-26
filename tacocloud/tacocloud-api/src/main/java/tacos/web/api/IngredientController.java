@@ -43,12 +43,17 @@ public class IngredientController {
     return repo.findById(id);
   }
 
+  //Ejercicio 1: Actualizar un ingrediente sin perder el publisher
   @PutMapping("/{id}")
-  public void updateIngredient(@PathVariable String id, @RequestBody Ingredient ingredient) {
-    if (!ingredient.getId().equals(id)) {
-      throw new IllegalStateException("Given ingredient's ID doesn't match the ID in the path.");
+  //En lugar de retornar void, retornamos un Mono<Ingredient> para mantener el publisher y permitir la suscripción a la operación de actualización.
+  public Mono<Ingredient> updateIngredient(@PathVariable String id, @RequestBody Ingredient ingredient) {
+    //Comparamos el id del ingrediente recibido en la solicitud con el id de la ruta para asegurarnos de que coincidan antes de actualizar.
+    if(!ingredient.getId().equals(id)) {
+      //En lugar de retornar un error normal, retornamos un Mono.error con una excepción que indica que los IDs no coinciden. Esto permite que el flujo de datos continúe y se maneje adecuadamente en la suscripción.
+      return Mono.error(new IllegalStateException("Given ingredient ID does not match the path variable ID"));
     }
-    repo.save(ingredient);
+    //Si los ids coinciden, retornamos el resultado de la operación de guardado del ingrediente en el repositorio, que es un Mono<Ingredient>. Esto permite que la operación de actualización se realice de manera reactiva y se pueda suscribir a ella.
+    return repo.save(ingredient);
   }
 
   @PostMapping
