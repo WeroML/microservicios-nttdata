@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import reactor.core.publisher.Flux;
@@ -67,9 +68,14 @@ public class IngredientController {
         });
   }
 
+  //Ejercicio 2: Eliminar de verdad y responder con semántica HTTP
   @DeleteMapping("/{id}")
-  public void deleteIngredient(@PathVariable String id) {
-    repo.deleteById(id);
+  @ResponseStatus(HttpStatus.NO_CONTENT) //Nuevo: Indicamos que la respuesta HTTP debe tener el código de estado 204 No Content, que es el código adecuado para indicar que la operación de eliminación se ha completado correctamente y que no hay contenido adicional en la respuesta.
+  //Como en el ejercicio 1, cambiamos el retorno de void a Mono<Void> para mantener el publisher y permitir la suscripción a la operación de eliminación.
+  public Mono<Void> deleteIngredient(@PathVariable String id) {
+    //En lugar de simplemente eliminar el ingrediente y no retornar nada, retornamos el resultado de la operación de eliminación del repositorio, que es un Mono<Void>. Esto permite que la operación de eliminación se realice de manera reactiva y se pueda suscribir a ella.
+    //Además, así mandamos la respuesta HTTP adecuada al cliente, indicando que la operación de eliminación se ha completado correctamente.
+    return repo.deleteById(id);
   }
 
 }
