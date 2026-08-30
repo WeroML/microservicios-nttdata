@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -47,14 +48,23 @@ public class IngredientController {
   //Ejercicio 1: Actualizar un ingrediente sin perder el publisher
   @PutMapping("/{id}")
   //En lugar de retornar void, retornamos un Mono<Ingredient> para mantener el publisher y permitir la suscripción a la operación de actualización.
-  public Mono<Ingredient> updateIngredient(@PathVariable String id, @RequestBody Ingredient ingredient) {
-    //Comparamos el id del ingrediente recibido en la solicitud con el id de la ruta para asegurarnos de que coincidan antes de actualizar.
-    if(!ingredient.getId().equals(id)) {
+  public Mono<ResponseEntity<Ingredient>> updateIngredient(@PathVariable String id, @RequestBody Ingredient ingredient) {
+    //1. Validamos que el id del ingrediente en la solicitud coincida con el id en la ruta. Si no coinciden, retornamos un error con el código de estado 400 Bad Request.
+    if(!id.equals(ingredient.getId())) {
       //En lugar de retornar un error normal, retornamos un Mono.error con una excepción que indica que los IDs no coinciden. Esto permite que el flujo de datos continúe y se maneje adecuadamente en la suscripción.
-      return Mono.error(new IllegalStateException("Given ingredient ID does not match the path variable ID"));
+      return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "El ID del ingrediente en la solicitud no coincide con el ID en la ruta."));
+
     }
-    //Si los ids coinciden, retornamos el resultado de la operación de guardado del ingrediente en el repositorio, que es un Mono<Ingredient>. Esto permite que la operación de actualización se realice de manera reactiva y se pueda suscribir a ella.
-    return repo.save(ingredient);
+
+    //2. Validamos que exista un ingrediente con el ID proporcionado en la ruta. Si no existe, retornamos un error con el código de estado 404 Not Found.
+    return repo.findById(id)
+        //Si existe, lo reemplazamos con el nuevo
+        .flatMap(existingIngredient -> repo.save(ingredient))
+        //Si no existe, lanzamos 404
+        .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "El ingrediente con el ID especificado no existe.")))
+        //3. Retornamos el ingrediente actualizado con un código de estado 200 OK.
+        .map(updatedIngredient -> ResponseEntity.ok(updatedIngredient));
+
   }
 
   @PostMapping
@@ -70,7 +80,7 @@ public class IngredientController {
 
   //Ejercicio 2: Eliminar de verdad y responder con semántica HTTP
   @DeleteMapping("/{id}")
-  @ResponseStatus(HttpStatus.NO_CONTENT) //Nuevo: Indicamos que la respuesta HTTP debe tener el código de estado 204 No Content, que es el código adecuado para indicar que la operación de eliminación se ha completado correctamente y que no hay contenido adicional en la respuesta.
+  @ResponseStatus(HttpStatus.NO_CONTENT) //Indicamos que la respuesta HTTP debe tener el código de estado 204 No Content, que es el código adecuado para indicar que la operación de eliminación se ha completado correctamente y que no hay contenido adicional en la respuesta.
   //Como en el ejercicio 1, cambiamos el retorno de void a Mono<Void> para mantener el publisher y permitir la suscripción a la operación de eliminación.
   public Mono<Void> deleteIngredient(@PathVariable String id) {
     //En lugar de simplemente eliminar el ingrediente y no retornar nada, retornamos el resultado de la operación de eliminación del repositorio, que es un Mono<Void>. Esto permite que la operación de eliminación se realice de manera reactiva y se pueda suscribir a ella.
