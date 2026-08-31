@@ -109,4 +109,33 @@ public class IngredientControllerTest {
     //Verificar que no se haya llamado a repo.save() ya que los IDs no coinciden
     verify(repo, never()).save(any(Ingredient.class));
   }
+
+  // Eliminar un ingrediente existente, esperar isNoContent() y que se haya llamado a deleteById
+  @Test
+  public void delete_existing_returns_204_and_deletes() {
+    //Arrange
+    // 1. Mockear el IngredientRepository
+    IngredientRepository repo = Mockito.mock(IngredientRepository.class);
+
+    //Preparar lo que se espera que haga el Mock del repositorio
+    //Cuando le pidan al Mock que busque por ID, devolver un Mono vacío para simular que el ingrediente existe
+    when(repo.findById("FLTO")).thenReturn(Mono.just(new Ingredient("FLTO", "Flour Tortilla", Type.WRAP)));
+
+    //Cuando le pidan al Mock que elimine por ID, devolver Mono.empty() para simular la eliminación exitosa
+    when(repo.deleteById("FLTO")).thenReturn(Mono.empty());
+
+    // 2. Configurar el WebTestClient.bindToController(new IngredientController(repo)).build()
+    WebTestClient testClient = WebTestClient.bindToController(new IngredientController(repo)).build();
+
+    //Act and Assert
+
+    // 3. Ejecutar testClient.delete()... y verificar 204 No Content
+    testClient.delete()
+        .uri("/api/ingredients/FLTO")
+        .exchange()
+        .expectStatus().isNoContent();
+
+    //Verificar que se haya llamado a repo.deleteById() con el ID correcto
+    verify(repo).deleteById("FLTO");
+  }
 }
