@@ -3,7 +3,6 @@ package tacos.web.api;
 import java.net.URI;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -17,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -67,14 +68,24 @@ public class IngredientController {
 
   }
 
+  //Ejercicio 3: Construir Location sin localhost ni rutas rotas
   @PostMapping
-  public Mono<ResponseEntity<Ingredient>> postIngredient(@RequestBody Mono<Ingredient> ingredient) {
-    return ingredient
-        .flatMap(repo::save)
+  public Mono<ResponseEntity<Ingredient>> postIngredient(@RequestBody Ingredient ingredient) {
+    //Primero, retornamos el resultado de la operación de guardado del 
+    // ingrediente en el repositorio, que es un Mono<Ingredient>. 
+    // Esto permite que la operación de guardado se realice de 
+    // manera reactiva y se pueda suscribir a ella.
+    return repo.save(ingredient)
         .map(i -> {
-          HttpHeaders headers = new HttpHeaders();
-          headers.setLocation(URI.create("http://localhost:8080/ingredients/" + i.getId()));
-          return new ResponseEntity<Ingredient>(i, headers, HttpStatus.CREATED);
+          // Usamos UriComponentsBuilder.fromPath para construir la ruta relativa de forma limpia
+          URI location = UriComponentsBuilder
+              .fromPath("/api/ingredients/{id}")
+              .buildAndExpand(i.getId())
+              .toUri();
+
+          //Retornamos un ResponseEntity con el código de estado 201 Created y la 
+          //cabecera Location apuntando a la ruta del nuevo recurso creado.
+          return ResponseEntity.created(location).body(i);
         });
   }
 

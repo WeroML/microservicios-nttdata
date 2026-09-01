@@ -138,4 +138,38 @@ public class IngredientControllerTest {
     //Verificar que se haya llamado a repo.deleteById() con el ID correcto
     verify(repo).deleteById("FLTO");
   }
+
+//Test para el ejercicio 3 (Método postIngredient) que verifica que se cree un ingrediente y se retorne 201 Created 
+// con la cabecera Location correcta
+@Test
+public void postIngredient_shouldCreateIngredientAndReturn21CreatedWithLocationHeader() {
+  //Arrange 
+  //1. Preparamos el mock del repositorio y los ingredientes de prueba
+  IngredientRepository repo = Mockito.mock(IngredientRepository.class);
+  Ingredient unsaved = new Ingredient("TEST", "Test Ingredient", Type.SAUCE);
+  Ingredient saved = new Ingredient("TEST", "Test Ingredient", Type.SAUCE);
+
+  // Programamos el mock para que responda con el ingrediente guardado
+  when(repo.save(any(Ingredient.class))).thenReturn(Mono.just(saved));
+
+  WebTestClient testClient = WebTestClient.bindToController(
+      new IngredientController(repo)).build();
+
+  //Act and Assert
+
+  //2. Ejecutamos la solicitud POST y verificamos el resultado
+  testClient.post()
+      .uri("/api/ingredients")
+      .contentType(MediaType.APPLICATION_JSON)
+      .body(Mono.just(unsaved), Ingredient.class)
+      .exchange()
+      .expectStatus().isCreated() // 1. Verifica HTTP 201 Created
+      .expectHeader().valueEquals("Location", "/api/ingredients/TEST")
+      .expectBody(Ingredient.class) // 3. Verifica el cuerpo
+      .isEqualTo(saved);
+
+  // 3. Verificamos que el método save del repositorio haya sido 
+  // llamado con cualquier objeto de tipo Ingredient
+  verify(repo).save(any(Ingredient.class));
+}
 }
