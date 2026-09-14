@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -91,7 +92,8 @@ public class OrderApiController {
             order.setDeliveryState(patch.getDeliveryState());
           }
           if (patch.getDeliveryZip() != null) {
-            order.setDeliveryZip(patch.getDeliveryState());
+            order.setDeliveryZip(patch.getDeliveryZip()); //Ejercicio 4: Arreglar error de copy-paste en el patch de la dirección de entrega. Se estaba seteando el estado en lugar del zip.
+                                                          //También asegurarnos de que solo se puedan actualizar los campos de dirección de entrega y no el usuario ni la lista de tacos.
           }
           if (patch.getCcNumber() != null) {
             order.setCcNumber(patch.getCcNumber());
@@ -104,7 +106,7 @@ public class OrderApiController {
           }
           return order;
         })
-        .flatMap(repo::save);
+        .flatMap(repo::save).switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)));
   }
 
   @DeleteMapping("/{orderId}")
