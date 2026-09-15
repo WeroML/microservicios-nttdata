@@ -11,6 +11,7 @@ import reactor.core.publisher.Mono;
 import tacos.TacoOrder;
 import tacos.data.OrderRepository;
 import tacos.messaging.OrderMessagingService;
+import tacos.web.api.EmailOrder;
 import tacos.web.api.EmailOrderService;
 import tacos.web.api.OrderApiController;
 
@@ -128,5 +129,70 @@ public class OrderApiControllerTest {
         .expectStatus().isNoContent();                         //Verifica 204 No Content
 
     verify(repo).deleteById("ORDER123");                       //Verifica que se ejecutó el borrado real
+  }
+
+  // Test para el ejercicio 6: Una sola suscripción para guardar y publicar (postOrder)
+  @Test
+  public void postOrder_shouldSaveAndPublishOrderInSingleFlow() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+
+    TacoOrder inputOrder = new TacoOrder();
+    inputOrder.setId("ORDER_REGULAR");
+    inputOrder.setDeliveryName("Gustavo");
+
+    when(repo.save(any(TacoOrder.class))).thenReturn(Mono.just(inputOrder));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService))
+        .build();
+
+    testClient.post()
+        .uri("/api/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(inputOrder)
+        .exchange()
+        .expectStatus().isCreated()
+        .expectBody()
+          .jsonPath("$.id").isEqualTo("ORDER_REGULAR");
+
+    verify(repo).save(any(TacoOrder.class));
+    verify(messagingService).sendOrder(inputOrder);
+  }
+
+  // Test para el ejercicio 6: Una sola suscripción para guardar y publicar (postOrderFromEmail)
+  @Test
+  public void postOrderFromEmail_shouldConvertSaveAndPublishInSingleFlow() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+
+    EmailOrder emailOrder = new EmailOrder();
+    emailOrder.setEmail("craig@habuma.com");
+
+    TacoOrder domainOrder = new TacoOrder();
+    domainOrder.setId("ORDER_FROM_EMAIL");
+    domainOrder.setDeliveryName("Craig Walls");
+
+    when(emailService.convertEmailOrderToDomainOrder(any())).thenReturn(Mono.just(domainOrder));
+    when(repo.save(any(TacoOrder.class))).thenReturn(Mono.just(domainOrder));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService))
+        .build();
+
+    testClient.post()
+        .uri("/api/orders/fromEmail")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(emailOrder)
+        .exchange()
+        .expectStatus().isCreated()
+        .expectBody()
+          .jsonPath("$.id").isEqualTo("ORDER_FROM_EMAIL");
+
+    verify(emailService).convertEmailOrderToDomainOrder(any());
+    verify(repo).save(domainOrder);
+    verify(messagingService).sendOrder(domainOrder);
   }
 }

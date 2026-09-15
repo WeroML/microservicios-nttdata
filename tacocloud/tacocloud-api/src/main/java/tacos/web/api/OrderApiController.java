@@ -52,20 +52,20 @@ public class OrderApiController {
 //        .flatMap(repo::save);
 //  }
 
+  // Ejercicio 7: Una sola suscripción para guardar y publicar
   @PostMapping(consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrder(@RequestBody TacoOrder order) {
-    orderMessages.sendOrder(order);
-    return repo.save(order);
+    return repo.save(order)
+        .doOnNext(orderMessages::sendOrder);
   }
 
   @PostMapping(path="fromEmail", consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrderFromEmail(@RequestBody Mono<EmailOrder> emailOrder) {
-    Mono<TacoOrder> order = emailOrderService.convertEmailOrderToDomainOrder(emailOrder);
-    order.subscribe(orderMessages::sendOrder); // TODO: not ideal...work into reactive flow below
-    return order
-        .flatMap(repo::save);
+    return emailOrderService.convertEmailOrderToDomainOrder(emailOrder)
+        .flatMap(repo::save)
+        .doOnNext(orderMessages::sendOrder);
   }
 
   //Ejercicio 5: PUT y DELETE de órdenes con identidad consistente
