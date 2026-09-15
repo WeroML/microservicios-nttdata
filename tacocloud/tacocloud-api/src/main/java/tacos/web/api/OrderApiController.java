@@ -68,9 +68,13 @@ public class OrderApiController {
         .flatMap(repo::save);
   }
 
+  //Ejercicio 5: PUT y DELETE de órdenes con identidad consistente
   @PutMapping(path="/{orderId}", consumes="application/json")
-  public Mono<TacoOrder> putOrder(@RequestBody Mono<TacoOrder> order) {
-    return order.flatMap(repo::save);
+  //Agregar @PathVariable con id "orderId".
+  public Mono<TacoOrder> putOrder(@PathVariable("orderId") String orderId,
+                                  @RequestBody TacoOrder order) {
+    order.setId(orderId); 
+    return repo.save(order);
   }
 
   @PatchMapping(path="/{orderId}", consumes="application/json")
@@ -111,10 +115,11 @@ public class OrderApiController {
 
   @DeleteMapping("/{orderId}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void deleteOrder(@PathVariable("orderId") String orderId) {
+  public Mono<Void> deleteOrder(@PathVariable("orderId") String orderId) {
     try {
       repo.deleteById(orderId);
     } catch (EmptyResultDataAccessException e) {}
+    return Mono.empty();
   }
 
 }

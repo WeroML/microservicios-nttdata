@@ -74,4 +74,59 @@ public class OrderApiControllerTest {
         .exchange()
         .expectStatus().isNotFound(); // Verifica que devuelve 404
   }
+
+  //Test para el ejercicio 5: Put con identidad consistente
+    @Test
+  public void putOrder_shouldSetConsistentIdentityAndSave() {
+    // ARRANGE
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+
+    TacoOrder inputOrder = new TacoOrder();
+    inputOrder.setDeliveryName("Gustavo");
+
+    // Simulamos que al guardar se retorna la misma orden recibida
+    when(repo.save(any(TacoOrder.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService))
+        .build();
+
+    // ACT & ASSERT
+    testClient.put()
+        .uri("/api/orders/ORDER123")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(inputOrder)
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+          .jsonPath("$.id").isEqualTo("ORDER123")               //Verifica Identidad Consistente
+          .jsonPath("$.deliveryName").isEqualTo("Gustavo");
+
+    verify(repo).save(any(TacoOrder.class));
+  }
+
+  //Test para el ejercicio 5: Delete con identidad consistente
+  @Test
+  public void deleteOrder_shouldReturn204NoContent() {
+    // ARRANGE
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+
+    when(repo.deleteById("ORDER123")).thenReturn(Mono.empty());
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService))
+        .build();
+
+    // ACT & ASSERT
+    testClient.delete()
+        .uri("/api/orders/ORDER123")
+        .exchange()
+        .expectStatus().isNoContent();                         //Verifica 204 No Content
+
+    verify(repo).deleteById("ORDER123");                       //Verifica que se ejecutó el borrado real
+  }
 }
