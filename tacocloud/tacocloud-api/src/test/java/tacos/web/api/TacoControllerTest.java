@@ -90,4 +90,38 @@ public class TacoControllerTest {
     taco.setIngredients(ingredients);
     return taco;
   }
+
+  // Test para el Ejercicio 8: Separar DTOs de entrada, respuesta y persistencia
+  @Test
+  public void postTaco_withDto_shouldIsolateInputFromPersistenceEntity() {
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+
+    when(tacoRepo.save(any(Taco.class))).thenAnswer(invocation -> {
+      Taco tacoToSave = invocation.getArgument(0);
+      Taco savedTaco = new Taco();
+      savedTaco.setId("MONGO_GENERATED_ID");
+      savedTaco.setName(tacoToSave.getName());
+      savedTaco.setIngredients(tacoToSave.getIngredients());
+      return Mono.just(savedTaco);
+    });
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new TacoController(tacoRepo)).build();
+
+    // Intentamos enviar un ID malicioso para verificar que el DTO de entrada lo ignora
+    String jsonPayload = "{\"id\":\"MALICIOUS_ID\",\"name\":\"Carnitas Taco\",\"ingredients\":[{\"id\":\"FLTO\",\"name\":\"Flour Tortilla\",\"type\":\"WRAP\"}]}";
+
+    testClient.post()
+        .uri("/api/tacos")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(jsonPayload)
+        .exchange()
+        .expectStatus().isCreated()
+        .expectBody()
+          .jsonPath("$.id").isEqualTo("MONGO_GENERATED_ID")
+          .jsonPath("$.name").isEqualTo("Carnitas Taco");
+
+    // Verifica que la entidad recibida por la base de datos tenía id = null (el DTO protegió el modelo de persistencia)
+    Mockito.verify(tacoRepo).save(Mockito.argThat(taco -> taco.getId() == null));
+  }
 }

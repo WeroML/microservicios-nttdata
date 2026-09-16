@@ -1,5 +1,7 @@
 package tacos.web.api;
 
+import javax.validation.Valid;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +16,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import tacos.Taco;
 import tacos.data.TacoRepository;
+import tacos.web.api.dto.TacoRequest;
+import tacos.web.api.dto.TacoResponse;
 
 @RestController
 @RequestMapping(path = "/api/tacos", produces = "application/json")
@@ -26,19 +30,25 @@ public class TacoController {
   }
 
   @GetMapping(params="recent")
-  public Flux<Taco> recentTacos() {
-    return tacoRepo.findAll().take(12);
+  public Flux<TacoResponse> recentTacos() {
+    return tacoRepo.findAll()
+        .take(12)
+        .map(TacoResponse::fromEntity);
   }
 
+  // Ejercicio 8: Separar DTOs de entrada, respuesta y persistencia
   @PostMapping(consumes = "application/json")
   @ResponseStatus(HttpStatus.CREATED)
-  public Mono<Taco> postTaco(@RequestBody Taco taco) {
-    return tacoRepo.save(taco);
+  public Mono<TacoResponse> postTaco(@Valid @RequestBody TacoRequest request) {
+    Taco taco = request.toEntity();
+    return tacoRepo.save(taco)
+        .map(TacoResponse::fromEntity);
   }
 
   @GetMapping("/{id}")
-  public Mono<Taco> tacoById(@PathVariable("id") String id) {
-    return tacoRepo.findById(id);
+  public Mono<TacoResponse> tacoById(@PathVariable("id") String id) {
+    return tacoRepo.findById(id)
+        .map(TacoResponse::fromEntity);
   }
 
 }
