@@ -28,13 +28,27 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
   protected void configure(HttpSecurity http) throws Exception {
     http
       .authorizeRequests()
-        .antMatchers(HttpMethod.OPTIONS).permitAll() // needed for Angular/CORS
-        .antMatchers(HttpMethod.POST, "/api/ingredients").permitAll()
-        .antMatchers("/api/tacos/**", "/api/orders/**")
-            .permitAll()
-            //.access("hasRole('ROLE_USER')")
-        .antMatchers(HttpMethod.PATCH, "/api/ingredients").permitAll()
-        .antMatchers("/**").access("permitAll")
+        // Preflight CORS para frontend (Angular)
+        .antMatchers(HttpMethod.OPTIONS).permitAll()
+        
+        // Catálogo público de solo lectura
+        .antMatchers(HttpMethod.GET, "/api/ingredients/**", "/api/tacos/**").permitAll()
+        
+        // Páginas y recursos públicos
+        .antMatchers("/", "/login", "/register", "/styles/**", "/images/**", "/static/**").permitAll()
+        
+        // Roles útiles: Modificación de ingredientes protegida por roles
+        .antMatchers(HttpMethod.POST, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
+        .antMatchers(HttpMethod.PUT, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
+        .antMatchers(HttpMethod.PATCH, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
+        .antMatchers(HttpMethod.DELETE, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
+        
+        // Roles útiles: Creación y gestión de órdenes y tacos requiere ROLE_USER
+        .antMatchers("/api/orders/**").hasRole("USER")
+        .antMatchers(HttpMethod.POST, "/api/tacos/**").hasRole("USER")
+        
+        // Principio DENY-BY-DEFAULT: Cualquier otra ruta exige autenticación
+        .anyRequest().authenticated()
         
       .and()
         .formLogin()
