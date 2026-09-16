@@ -37,6 +37,9 @@ public class TacoRequest {
   private Boolean available;
   private Integer stock;
 
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  private Integer quantity = 1;
+
   /**
    * Mapeo del DTO de entrada a la entidad de persistencia del dominio.
    */
@@ -53,6 +56,7 @@ public class TacoRequest {
     if (this.stock != null) {
       taco.setStock(this.stock);
     }
+    taco.setQuantity(this.quantity != null && this.quantity > 0 ? this.quantity : 1);
     return taco;
   }
 }

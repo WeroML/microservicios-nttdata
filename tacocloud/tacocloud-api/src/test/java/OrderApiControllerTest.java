@@ -7,9 +7,16 @@ import org.mockito.Mockito;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
+import java.math.BigDecimal;
+import java.util.Arrays;
+
 import reactor.core.publisher.Mono;
+import tacos.Ingredient;
+import tacos.Taco;
 import tacos.TacoOrder;
+import tacos.data.IngredientRepository;
 import tacos.data.OrderRepository;
+import tacos.data.TacoRepository;
 import tacos.messaging.OrderMessagingService;
 import tacos.web.api.EmailOrder;
 import tacos.web.api.EmailOrderService;
@@ -224,6 +231,180 @@ public class OrderApiControllerTest {
           .jsonPath("$.paymentToken").isEqualTo("tok_new_1234")
           .jsonPath("$.last4").isEqualTo("1234")
           .jsonPath("$.ccExpiration").isEqualTo("12/28");
+
+    verify(repo).save(any(TacoOrder.class));
+  }
+
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  @Test
+  public void postOrder_shouldCalculatePricesAndQuantitiesOnServerSide() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+
+    Ingredient tortilla = new Ingredient("FLTO", "Flour Tortilla", Ingredient.Type.WRAP, new BigDecimal("1.00"), true, 10);
+    Ingredient beef = new Ingredient("GRBF", "Ground Beef", Ingredient.Type.PROTEIN, new BigDecimal("2.50"), true, 10);
+
+    when(ingredientRepo.findById("FLTO")).thenReturn(Mono.just(tortilla));
+    when(ingredientRepo.findById("GRBF")).thenReturn(Mono.just(beef));
+    when(repo.save(any(TacoOrder.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo))
+        .build();
+
+    // Enviamos una orden con 2 tacos con cantidad 2 (esperado: precio unitario 3.50, total orden 7.00)
+    String jsonPayload = "{"
+        + "\"deliveryName\": \"Gustavo\","
+        + "\"tacos\": [{"
+        + "  \"name\": \"Custom Beef Taco\","
+        + "  \"quantity\": 2,"
+        + "  \"ingredients\": [{\"id\": \"FLTO\"}, {\"id\": \"GRBF\"}]"
+        + "}]"
+        + "}";
+
+    testClient.post()
+        .uri("/api/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(jsonPayload)
+        .exchange()
+        .expectStatus().isCreated()
+        .expectBody()
+          .jsonPath("$.tacos[0].quantity").isEqualTo(2)
+          .jsonPath("$.tacos[0].price").isEqualTo(3.50)
+          .jsonPath("$.total").isEqualTo(7.00);
+
+    verify(repo).save(any(TacoOrder.class));
+    verify(messagingService).sendOrder(any(TacoOrder.class));
+  }
+
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor (Protección contra manipulación)
+  @Test
+  public void postOrder_shouldOverwriteTamperedPricesAndTotal() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+
+    Ingredient tortilla = new Ingredient("FLTO", "Flour Tortilla", Ingredient.Type.WRAP, new BigDecimal("0.75"), true, 10);
+    Ingredient cheese = new Ingredient("CHED", "Cheddar", Ingredient.Type.CHEESE, new BigDecimal("0.90"), true, 10);
+
+    when(ingredientRepo.findById("FLTO")).thenReturn(Mono.just(tortilla));
+    when(ingredientRepo.findById("CHED")).thenReturn(Mono.just(cheese));
+    when(repo.save(any(TacoOrder.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo))
+        .build();
+
+    // Atacante intenta enviar price: 0.01 y total: 0.01 en el payload
+    String tamperedPayload = "{"
+        + "\"deliveryName\": \"Attacker\","
+        + "\"total\": 0.01,"
+        + "\"tacos\": [{"
+        + "  \"name\": \"Cheesy Taco\","
+        + "  \"price\": 0.01,"
+        + "  \"quantity\": 1,"
+        + "  \"ingredients\": [{\"id\": \"FLTO\"}, {\"id\": \"CHED\"}]"
+        + "}]"
+        + "}";
+
+    testClient.post()
+        .uri("/api/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(tamperedPayload)
+        .exchange()
+        .expectStatus().isCreated()
+        .expectBody()
+          // El servidor debe ignorar el 0.01 y calcular 0.75 + 0.90 = 1.65
+          .jsonPath("$.tacos[0].price").isEqualTo(1.65)
+          .jsonPath("$.total").isEqualTo(1.65);
+
+    verify(repo).save(any(TacoOrder.class));
+  }
+
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor (Normalización de cantidad)
+  @Test
+  public void postOrder_shouldDefaultQuantityToOneWhenMissingOrInvalid() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+
+    Ingredient tortilla = new Ingredient("FLTO", "Flour Tortilla", Ingredient.Type.WRAP, new BigDecimal("1.50"), true, 10);
+
+    when(ingredientRepo.findById("FLTO")).thenReturn(Mono.just(tortilla));
+    when(repo.save(any(TacoOrder.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo))
+        .build();
+
+    // Payload con cantidad 0 o negativa
+    String invalidQuantityPayload = "{"
+        + "\"deliveryName\": \"Gustavo\","
+        + "\"tacos\": [{"
+        + "  \"name\": \"Single Wrap\","
+        + "  \"quantity\": 0,"
+        + "  \"ingredients\": [{\"id\": \"FLTO\"}]"
+        + "}]"
+        + "}";
+
+    testClient.post()
+        .uri("/api/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(invalidQuantityPayload)
+        .exchange()
+        .expectStatus().isCreated()
+        .expectBody()
+          .jsonPath("$.tacos[0].quantity").isEqualTo(1)
+          .jsonPath("$.tacos[0].price").isEqualTo(1.50)
+          .jsonPath("$.total").isEqualTo(1.50);
+
+    verify(repo).save(any(TacoOrder.class));
+  }
+
+  // Ejercicio 14: PUT recalcula precios y total
+  @Test
+  public void putOrder_shouldRecalculatePricesAndTotal() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+
+    Ingredient beef = new Ingredient("GRBF", "Ground Beef", Ingredient.Type.PROTEIN, new BigDecimal("2.50"), true, 10);
+    when(ingredientRepo.findById("GRBF")).thenReturn(Mono.just(beef));
+    when(repo.save(any(TacoOrder.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo))
+        .build();
+
+    String putPayload = "{"
+        + "\"deliveryName\": \"Gustavo\","
+        + "\"tacos\": [{"
+        + "  \"name\": \"Beef Only\","
+        + "  \"quantity\": 3,"
+        + "  \"ingredients\": [{\"id\": \"GRBF\"}]"
+        + "}]"
+        + "}";
+
+    testClient.put()
+        .uri("/api/orders/ORDER_PUT_1")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(putPayload)
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+          .jsonPath("$.id").isEqualTo("ORDER_PUT_1")
+          .jsonPath("$.tacos[0].quantity").isEqualTo(3)
+          .jsonPath("$.tacos[0].price").isEqualTo(2.50)
+          .jsonPath("$.total").isEqualTo(7.50);
 
     verify(repo).save(any(TacoOrder.class));
   }

@@ -18,4 +18,7 @@ public class TacoOrder {
 
   private List<Taco> tacos = new ArrayList<>();
 
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  private java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+
 }

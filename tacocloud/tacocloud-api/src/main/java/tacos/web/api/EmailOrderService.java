@@ -60,6 +60,8 @@ public class EmailOrderService {
                                   Taco taco = new Taco();
                                   taco.setName(emailTaco.getName());
                                   taco.setIngredients(ingredients);
+                                  taco.setQuantity(1);
+                                  taco.calculatePriceFromIngredients();
                                   return taco;
                                 })
                         )
@@ -68,6 +70,7 @@ public class EmailOrderService {
                           for (Taco taco : tacos) {
                             order.addTaco(taco);
                           }
+                          order.calculateTotal();
                           return order;
                         });
                   })

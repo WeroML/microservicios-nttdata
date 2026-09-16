@@ -14,4 +14,8 @@ public class Taco {
 
   private List<Ingredient> ingredients;
 
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  private Integer quantity = 1;
+  private java.math.BigDecimal price;
+
 }

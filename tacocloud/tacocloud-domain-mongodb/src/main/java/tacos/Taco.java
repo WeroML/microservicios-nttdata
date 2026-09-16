@@ -41,4 +41,28 @@ public class Taco {
   public boolean isInStock() {
     return this.stock != null && this.stock > 0;
   }
+
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  private Integer quantity = 1;
+
+  public Integer getQuantity() {
+    return (this.quantity == null || this.quantity <= 0) ? 1 : this.quantity;
+  }
+
+  public void setQuantity(Integer quantity) {
+    this.quantity = (quantity == null || quantity <= 0) ? 1 : quantity;
+  }
+
+  public java.math.BigDecimal calculatePriceFromIngredients() {
+    java.math.BigDecimal sum = java.math.BigDecimal.ZERO;
+    if (this.ingredients != null) {
+      for (Ingredient ing : this.ingredients) {
+        if (ing != null && ing.getPrice() != null) {
+          sum = sum.add(ing.getPrice());
+        }
+      }
+    }
+    this.price = sum;
+    return this.price;
+  }
 }

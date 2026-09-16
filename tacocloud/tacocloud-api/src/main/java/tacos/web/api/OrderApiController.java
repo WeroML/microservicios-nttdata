@@ -1,5 +1,8 @@
 package tacos.web.api;
 
+import java.math.BigDecimal;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -17,8 +20,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import tacos.Taco;
 import tacos.TacoOrder;
+import tacos.data.IngredientRepository;
 import tacos.data.OrderRepository;
+import tacos.data.TacoRepository;
 import tacos.messaging.OrderMessagingService;
 
 @RestController
@@ -30,13 +36,26 @@ public class OrderApiController {
   private OrderRepository repo;
   private OrderMessagingService orderMessages;
   private EmailOrderService emailOrderService;
+  private IngredientRepository ingredientRepo;
+  private TacoRepository tacoRepo;
 
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
                             EmailOrderService emailOrderService) {
+    this(repo, orderMessages, emailOrderService, null, null);
+  }
+
+  @Autowired
+  public OrderApiController(OrderRepository repo,
+                            OrderMessagingService orderMessages,
+                            EmailOrderService emailOrderService,
+                            IngredientRepository ingredientRepo,
+                            TacoRepository tacoRepo) {
     this.repo = repo;
     this.orderMessages = orderMessages;
     this.emailOrderService = emailOrderService;
+    this.ingredientRepo = ingredientRepo;
+    this.tacoRepo = tacoRepo;
   }
 
   @GetMapping(produces="application/json")
@@ -52,18 +71,90 @@ public class OrderApiController {
 //        .flatMap(repo::save);
 //  }
 
-  // Ejercicio 7: Una sola suscripción para guardar y publicar
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
   @PostMapping(consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrder(@RequestBody TacoOrder order) {
-    return repo.save(order)
+    return calculateOrderPrices(order)
+        .flatMap(repo::save)
         .doOnNext(orderMessages::sendOrder);
+  }
+
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  public Mono<TacoOrder> calculateOrderPrices(TacoOrder order) {
+    if (order.getTacos() == null || order.getTacos().isEmpty()) {
+      order.setTotal(BigDecimal.ZERO);
+      return Mono.just(order);
+    }
+
+    return Flux.fromIterable(order.getTacos())
+        .flatMap(taco -> {
+          // Normalizar cantidad autoritativamente (mínimo 1)
+          int qty = (taco.getQuantity() != null && taco.getQuantity() > 0) ? taco.getQuantity() : 1;
+          taco.setQuantity(qty);
+
+          // Si es un taco preconfigurado del catálogo
+          if (taco.getId() != null && tacoRepo != null) {
+            return tacoRepo.findById(taco.getId())
+                .map(catalogTaco -> {
+                  taco.setName(catalogTaco.getName());
+                  taco.setPrice(catalogTaco.getPrice());
+                  if (taco.getIngredients() == null || taco.getIngredients().isEmpty()) {
+                    taco.setIngredients(catalogTaco.getIngredients());
+                  }
+                  return taco;
+                })
+                .switchIfEmpty(Mono.defer(() -> calculateCustomTacoPrice(taco)));
+          }
+
+          return calculateCustomTacoPrice(taco);
+        })
+        .collectList()
+        .map(tacos -> {
+          order.setTacos(tacos);
+          BigDecimal total = BigDecimal.ZERO;
+          for (Taco taco : tacos) {
+            BigDecimal unitPrice = taco.getPrice() != null ? taco.getPrice() : BigDecimal.ZERO;
+            int qty = taco.getQuantity();
+            total = total.add(unitPrice.multiply(BigDecimal.valueOf(qty)));
+          }
+          order.setTotal(total);
+          return order;
+        });
+  }
+
+  private Mono<Taco> calculateCustomTacoPrice(Taco taco) {
+    if (taco.getIngredients() == null || taco.getIngredients().isEmpty()) {
+      taco.setPrice(BigDecimal.ZERO);
+      return Mono.just(taco);
+    }
+
+    if (ingredientRepo != null) {
+      return Flux.fromIterable(taco.getIngredients())
+          .flatMap(ing -> {
+            if (ing.getId() != null) {
+              return ingredientRepo.findById(ing.getId())
+                  .defaultIfEmpty(ing);
+            }
+            return Mono.just(ing);
+          })
+          .collectList()
+          .map(authoritativeIngredients -> {
+            taco.setIngredients(authoritativeIngredients);
+            taco.calculatePriceFromIngredients();
+            return taco;
+          });
+    }
+
+    taco.calculatePriceFromIngredients();
+    return Mono.just(taco);
   }
 
   @PostMapping(path="fromEmail", consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrderFromEmail(@RequestBody Mono<EmailOrder> emailOrder) {
     return emailOrderService.convertEmailOrderToDomainOrder(emailOrder)
+        .flatMap(this::calculateOrderPrices)
         .flatMap(repo::save)
         .doOnNext(orderMessages::sendOrder);
   }
@@ -74,7 +165,8 @@ public class OrderApiController {
   public Mono<TacoOrder> putOrder(@PathVariable("orderId") String orderId,
                                   @RequestBody TacoOrder order) {
     order.setId(orderId); 
-    return repo.save(order);
+    return calculateOrderPrices(order)
+        .flatMap(repo::save);
   }
 
   @PatchMapping(path="/{orderId}", consumes="application/json")

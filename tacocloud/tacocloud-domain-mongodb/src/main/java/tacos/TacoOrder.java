@@ -53,4 +53,21 @@ public class TacoOrder implements Serializable {
     this.paymentToken = token;
   }
 
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  private java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+
+  public java.math.BigDecimal calculateTotal() {
+    java.math.BigDecimal sum = java.math.BigDecimal.ZERO;
+    if (this.tacos != null) {
+      for (Taco taco : this.tacos) {
+        if (taco != null && taco.getPrice() != null) {
+          int qty = (taco.getQuantity() != null && taco.getQuantity() > 0) ? taco.getQuantity() : 1;
+          sum = sum.add(taco.getPrice().multiply(java.math.BigDecimal.valueOf(qty)));
+        }
+      }
+    }
+    this.total = sum;
+    return this.total;
+  }
+
 }

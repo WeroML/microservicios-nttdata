@@ -29,6 +29,9 @@ public class TacoResponse {
   private Boolean available;
   private Integer stock;
 
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  private Integer quantity;
+
   /**
    * Mapeo de la entidad de persistencia al DTO de respuesta.
    */
@@ -43,7 +46,8 @@ public class TacoResponse {
         taco.getIngredients(),
         taco.getPrice(),
         taco.getAvailable(),
-        taco.getStock()
+        taco.getStock(),
+        taco.getQuantity()
     );
   }
 }
