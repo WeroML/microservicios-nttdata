@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import tacos.Ingredient;
 import tacos.Ingredient.Type;
@@ -172,4 +173,52 @@ public void postIngredient_shouldCreateIngredientAndReturn21CreatedWithLocationH
   // llamado con cualquier objeto de tipo Ingredient
   verify(repo).save(any(Ingredient.class));
 }
+
+  // Test para Ejercicio 13: Catálogo con precio, disponibilidad y stock
+  @Test
+  public void allIngredients_withAvailableFilter_shouldReturnOnlyAvailable() {
+    IngredientRepository repo = Mockito.mock(IngredientRepository.class);
+    Ingredient availableIng = new Ingredient("FLTO", "Flour Tortilla", Type.WRAP, new java.math.BigDecimal("1.50"), true, 10);
+    when(repo.findByAvailableTrue()).thenReturn(Flux.just(availableIng));
+
+    WebTestClient testClient = WebTestClient.bindToController(new IngredientController(repo)).build();
+
+    testClient.get()
+        .uri("/api/ingredients?available=true")
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+          .jsonPath("$[0].id").isEqualTo("FLTO")
+          .jsonPath("$[0].price").isEqualTo(1.50)
+          .jsonPath("$[0].available").isEqualTo(true)
+          .jsonPath("$[0].stock").isEqualTo(10);
+
+    verify(repo).findByAvailableTrue();
+  }
+
+  // Test para Ejercicio 13: Catálogo con precio, disponibilidad y stock
+  @Test
+  public void patchIngredient_shouldUpdatePriceAvailabilityAndStock() {
+    IngredientRepository repo = Mockito.mock(IngredientRepository.class);
+    Ingredient existing = new Ingredient("COTO", "Corn Tortilla", Type.WRAP, new java.math.BigDecimal("1.00"), true, 20);
+
+    when(repo.findById("COTO")).thenReturn(Mono.just(existing));
+    when(repo.save(any(Ingredient.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
+
+    WebTestClient testClient = WebTestClient.bindToController(new IngredientController(repo)).build();
+
+    testClient.patch()
+        .uri("/api/ingredients/COTO")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue("{\"price\": 1.75, \"available\": false, \"stock\": 0}")
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+          .jsonPath("$.id").isEqualTo("COTO")
+          .jsonPath("$.price").isEqualTo(1.75)
+          .jsonPath("$.available").isEqualTo(false)
+          .jsonPath("$.stock").isEqualTo(0);
+
+    verify(repo).save(any(Ingredient.class));
+  }
 }

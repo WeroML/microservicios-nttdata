@@ -24,6 +24,11 @@ public class TacoResponse {
   private Date createdAt;
   private List<Ingredient> ingredients;
 
+  // Ejercicio 13: Catálogo con precio, disponibilidad y stock
+  private java.math.BigDecimal price;
+  private Boolean available;
+  private Integer stock;
+
   /**
    * Mapeo de la entidad de persistencia al DTO de respuesta.
    */
@@ -35,7 +40,10 @@ public class TacoResponse {
         taco.getId(),
         taco.getName(),
         taco.getCreatedAt(),
-        taco.getIngredients()
+        taco.getIngredients(),
+        taco.getPrice(),
+        taco.getAvailable(),
+        taco.getStock()
     );
   }
 }

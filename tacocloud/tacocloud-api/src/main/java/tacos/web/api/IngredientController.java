@@ -8,11 +8,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -36,9 +38,43 @@ public class IngredientController {
     this.repo = repo;
   }
 
+  // Ejercicio 13: Catálogo con precio, disponibilidad y stock
   @GetMapping
-  public Flux<Ingredient> allIngredients() {
+  public Flux<Ingredient> allIngredients(
+      @RequestParam(name = "available", required = false) Boolean available,
+      @RequestParam(name = "inStock", required = false) Boolean inStock) {
+    if (Boolean.TRUE.equals(available) && Boolean.TRUE.equals(inStock)) {
+      return repo.findByAvailableTrueAndStockGreaterThan(0);
+    } else if (Boolean.TRUE.equals(available)) {
+      return repo.findByAvailableTrue();
+    }
     return repo.findAll();
+  }
+
+  // Ejercicio 13: Catálogo con precio, disponibilidad y stock
+  @PatchMapping(path = "/{id}", consumes = "application/json")
+  public Mono<ResponseEntity<Ingredient>> patchIngredient(@PathVariable String id, @RequestBody Ingredient patch) {
+    return repo.findById(id)
+        .flatMap(ingredient -> {
+          if (patch.getName() != null) {
+            ingredient.setName(patch.getName());
+          }
+          if (patch.getType() != null) {
+            ingredient.setType(patch.getType());
+          }
+          if (patch.getPrice() != null) {
+            ingredient.setPrice(patch.getPrice());
+          }
+          if (patch.getAvailable() != null) {
+            ingredient.setAvailable(patch.getAvailable());
+          }
+          if (patch.getStock() != null) {
+            ingredient.setStock(patch.getStock());
+          }
+          return repo.save(ingredient);
+        })
+        .map(ResponseEntity::ok)
+        .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "El ingrediente con el ID especificado no existe.")));
   }
 
   @GetMapping("/{id}")

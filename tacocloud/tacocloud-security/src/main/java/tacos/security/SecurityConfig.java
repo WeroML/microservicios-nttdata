@@ -31,8 +31,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         // Preflight CORS para frontend (Angular)
         .antMatchers(HttpMethod.OPTIONS).permitAll()
         
-        // Catálogo público de solo lectura
-        .antMatchers(HttpMethod.GET, "/api/ingredients/**", "/api/tacos/**").permitAll()
+        // Catálogo público de solo lectura (Ejercicio 13: Catálogo con precio, disponibilidad y stock)
+        .antMatchers(HttpMethod.GET, "/api/ingredients/**", "/api/tacos/**", "/api/catalog/**").permitAll()
         
         // Páginas y recursos públicos
         .antMatchers("/", "/login", "/register", "/styles/**", "/images/**", "/static/**").permitAll()
