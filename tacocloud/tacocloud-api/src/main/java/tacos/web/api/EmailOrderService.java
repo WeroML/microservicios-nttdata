@@ -40,9 +40,9 @@ public class EmailOrderService {
                   .flatMap(paymentMethod -> {
                     TacoOrder order = new TacoOrder();
                     order.setUser(user);
-                    order.setCcNumber(paymentMethod.getCcNumber());
-                    order.setCcCVV(paymentMethod.getCcCVV());
+                    order.setPaymentToken(paymentMethod.getPaymentToken());
                     order.setCcExpiration(paymentMethod.getCcExpiration());
+                    order.setLast4(paymentMethod.getLast4());
                     order.setDeliveryName(user.getFullname());
                     order.setDeliveryStreet(user.getStreet());
                     order.setDeliveryCity(user.getCity());

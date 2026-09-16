@@ -36,7 +36,7 @@ public class EmailOrderServiceTest {
     User user = new User("craig", "pass", "Craig Walls", "123 Street", "City", "State", "76227", "123", "craig@habuma.com");
     user.setId("USER1");
 
-    PaymentMethod paymentMethod = new PaymentMethod(user, "4111111111111111", "123", "12/25");
+    PaymentMethod paymentMethod = new PaymentMethod(user, "tok_visa_123456789", "12/25", "1111");
     Ingredient flourTortilla = new Ingredient("FLTO", "Flour Tortilla", Type.WRAP);
 
     // Petición de EmailOrder simulada
@@ -61,7 +61,9 @@ public class EmailOrderServiceTest {
           // Verificar datos del usuario y dirección
           assertThat(order.getUser().getEmail()).isEqualTo("craig@habuma.com");
           assertThat(order.getDeliveryName()).isEqualTo("Craig Walls");
-          assertThat(order.getCcNumber()).isEqualTo("4111111111111111");
+          assertThat(order.getPaymentToken()).isEqualTo("tok_visa_123456789");
+          assertThat(order.getCcExpiration()).isEqualTo("12/25");
+          assertThat(order.getLast4()).isEqualTo("1111");
 
           //VERIFICACIÓN CLAVE SIN CONDICIONES DE CARRERA:
           assertThat(order.getTacos()).hasSize(1);

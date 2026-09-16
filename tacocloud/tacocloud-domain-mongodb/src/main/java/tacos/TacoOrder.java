@@ -31,17 +31,26 @@ public class TacoOrder implements Serializable {
 
   private String deliveryZip;
 
-  private String ccNumber;
+  // PCI-DSS: Tokenizar pago y eliminar PAN/CVV del dominio
+  private String paymentToken;
 
   private String ccExpiration;
 
-  private String ccCVV;
+  private String last4;
 
 
   private List<Taco> tacos = new ArrayList<>();
 
   public void addTaco(Taco design) {
     this.tacos.add(design);
-}
+  }
+
+  public String getToken() {
+    return this.paymentToken;
+  }
+
+  public void setToken(String token) {
+    this.paymentToken = token;
+  }
 
 }

@@ -18,8 +18,15 @@ public class PaymentMethod {
   private String id;
   
   private final User user;
-  private final String ccNumber;
-  private final String ccCVV;
+  private final String paymentToken;
   private final String ccExpiration;
-  
+  private final String last4;
+
+  public PaymentMethod(User user, String paymentToken) {
+    this(user, paymentToken, null, null);
+  }
+
+  public String getToken() {
+    return this.paymentToken;
+  }
 }

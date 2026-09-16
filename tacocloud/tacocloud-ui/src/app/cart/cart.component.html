@@ -143,13 +143,12 @@
       <div class="groupBox groupBoxHalf">
         <div class="groupBoxTitle">Here's how I'll pay...</div>
         <div class="groupBoxContent">
-          <label for="ccNumber">Credit Card #: </label>
-          <input type="text" [(ngModel)]="model.ccNumber" name="ccNumber"/>
+          <label for="paymentToken">Payment Token: </label>
+          <input type="text" [(ngModel)]="model.paymentToken" name="paymentToken"/>
           <br/>
 
-          <label for="ccExpiration">Expiration / CVV: </label>
+          <label for="ccExpiration">Expiration: </label>
           <input type="text" [(ngModel)]="model.ccExpiration" name="ccExpiration"/>
-          <input type="text" [(ngModel)]="model.ccCVV" name="ccCVV" size="4"/>
         </div>
       </div>
 

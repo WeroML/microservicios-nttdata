@@ -16,9 +16,9 @@ export class CartComponent implements OnInit {
     deliveryStreet: '',
     deliveryState: '',
     deliveryZip: '',
-    ccNumber: '',
+    paymentToken: '',
     ccExpiration: '',
-    ccCVV: '',
+    last4: '',
     tacos: []
   };
 

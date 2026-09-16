@@ -99,14 +99,14 @@ public class OrderApiController {
             order.setDeliveryZip(patch.getDeliveryZip()); //Ejercicio 4: Arreglar error de copy-paste en el patch de la dirección de entrega. Se estaba seteando el estado en lugar del zip.
                                                           //También asegurarnos de que solo se puedan actualizar los campos de dirección de entrega y no el usuario ni la lista de tacos.
           }
-          if (patch.getCcNumber() != null) {
-            order.setCcNumber(patch.getCcNumber());
+          if (patch.getPaymentToken() != null) {
+            order.setPaymentToken(patch.getPaymentToken());
           }
           if (patch.getCcExpiration() != null) {
             order.setCcExpiration(patch.getCcExpiration());
           }
-          if (patch.getCcCVV() != null) {
-            order.setCcCVV(patch.getCcCVV());
+          if (patch.getLast4() != null) {
+            order.setLast4(patch.getLast4());
           }
           return order;
         })

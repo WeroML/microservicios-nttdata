@@ -195,4 +195,36 @@ public class OrderApiControllerTest {
     verify(repo).save(domainOrder);
     verify(messagingService).sendOrder(domainOrder);
   }
+
+  // Test para ejercicio 12: Tokenizar pago y eliminar PAN/CVV del dominio
+  @Test
+  public void patchOrder_shouldUpdatePaymentTokenAndLast4Correctly() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+
+    TacoOrder existingOrder = new TacoOrder();
+    existingOrder.setId("ORDER_PAY");
+    existingOrder.setPaymentToken("tok_old");
+
+    when(repo.findById("ORDER_PAY")).thenReturn(Mono.just(existingOrder));
+    when(repo.save(any(TacoOrder.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService))
+        .build();
+
+    testClient.patch()
+        .uri("/api/orders/ORDER_PAY")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue("{\"paymentToken\": \"tok_new_1234\", \"last4\": \"1234\", \"ccExpiration\": \"12/28\"}")
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+          .jsonPath("$.paymentToken").isEqualTo("tok_new_1234")
+          .jsonPath("$.last4").isEqualTo("1234")
+          .jsonPath("$.ccExpiration").isEqualTo("12/28");
+
+    verify(repo).save(any(TacoOrder.class));
+  }
 }
