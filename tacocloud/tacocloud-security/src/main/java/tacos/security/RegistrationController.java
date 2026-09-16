@@ -4,6 +4,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import reactor.core.publisher.Mono;
 import tacos.data.UserRepository;
 
 @Controller
@@ -24,10 +25,11 @@ public class RegistrationController {
     return "registration";
   }
   
+  // Ejercicio 9: Registro reactivo con contraseñas protegidas
   @PostMapping
-  public String processRegistration(RegistrationForm form) {
-    userRepo.save(form.toUser(passwordEncoder));
-    return "redirect:/login";
+  public Mono<String> processRegistration(RegistrationForm form) {
+    return userRepo.save(form.toUser(passwordEncoder))
+        .map(user -> "redirect:/login");
   }
 
 }
