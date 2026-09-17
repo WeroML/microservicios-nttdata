@@ -3,13 +3,17 @@ package tacos;
 import java.math.BigDecimal;
 import java.util.Arrays;
 
+import java.util.Date;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import tacos.Coupon;
+import tacos.Coupon.DiscountType;
 import tacos.Ingredient.Type;
+import tacos.data.CouponRepository;
 import tacos.data.IngredientRepository;
 import tacos.data.PaymentMethodRepository;
 import tacos.data.TacoRepository;
@@ -22,7 +26,7 @@ public class DevelopmentConfig {
   @Bean
   public CommandLineRunner dataLoader(IngredientRepository repo,
         UserRepository userRepo, PasswordEncoder encoder, TacoRepository tacoRepo,
-        PaymentMethodRepository paymentMethodRepo) { // user repo for ease of testing with a built-in user
+        PaymentMethodRepository paymentMethodRepo, CouponRepository couponRepo) { // user repo for ease of testing with a built-in user
     
     return new CommandLineRunner() {
       @Override
@@ -74,6 +78,27 @@ public class DevelopmentConfig {
         taco3.setStock(60);
         taco3.setIngredients(Arrays.asList(flourTortilla, cornTortilla, tomatoes, lettuce, salsa));
         tacoRepo.save(taco3).subscribe();
+
+        // Ejercicio 15: Motor de cupones con reglas y fecha de expiración
+        Date futureExpiration = new Date(System.currentTimeMillis() + 315360000000L); // 10 años en el futuro
+        Date pastExpiration = new Date(System.currentTimeMillis() - 86400000L); // ayer
+
+        Coupon taco10 = new Coupon("TACO10", "10% de descuento en tu orden", DiscountType.PERCENTAGE,
+            new BigDecimal("10"), null, null, futureExpiration, 1000, true);
+        couponRepo.save(taco10).subscribe();
+
+        Coupon fiveOff = new Coupon("FIVEOFF", "$5 de descuento en pedidos mayores a $15", DiscountType.FIXED_AMOUNT,
+            new BigDecimal("5.00"), new BigDecimal("15.00"), null, futureExpiration, 500, true);
+        couponRepo.save(fiveOff).subscribe();
+
+        Coupon expired = new Coupon("EXPIRED20", "20% caducado", DiscountType.PERCENTAGE,
+            new BigDecimal("20"), null, null, pastExpiration, null, true);
+        couponRepo.save(expired).subscribe();
+
+        Coupon limit1 = new Coupon("LIMIT1", "15% cupón de un solo uso agotado", DiscountType.PERCENTAGE,
+            new BigDecimal("15"), null, null, futureExpiration, 1, true);
+        limit1.setUsageCount(1);
+        couponRepo.save(limit1).subscribe();
 
       }
 

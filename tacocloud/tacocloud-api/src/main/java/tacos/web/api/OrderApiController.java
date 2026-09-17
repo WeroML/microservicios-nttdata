@@ -38,11 +38,21 @@ public class OrderApiController {
   private EmailOrderService emailOrderService;
   private IngredientRepository ingredientRepo;
   private TacoRepository tacoRepo;
+  // Ejercicio 15: Motor de cupones con reglas y fecha de expiración
+  private CouponEngine couponEngine;
 
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
                             EmailOrderService emailOrderService) {
-    this(repo, orderMessages, emailOrderService, null, null);
+    this(repo, orderMessages, emailOrderService, null, null, null);
+  }
+
+  public OrderApiController(OrderRepository repo,
+                            OrderMessagingService orderMessages,
+                            EmailOrderService emailOrderService,
+                            IngredientRepository ingredientRepo,
+                            TacoRepository tacoRepo) {
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null);
   }
 
   @Autowired
@@ -50,12 +60,14 @@ public class OrderApiController {
                             OrderMessagingService orderMessages,
                             EmailOrderService emailOrderService,
                             IngredientRepository ingredientRepo,
-                            TacoRepository tacoRepo) {
+                            TacoRepository tacoRepo,
+                            CouponEngine couponEngine) {
     this.repo = repo;
     this.orderMessages = orderMessages;
     this.emailOrderService = emailOrderService;
     this.ingredientRepo = ingredientRepo;
     this.tacoRepo = tacoRepo;
+    this.couponEngine = couponEngine;
   }
 
   @GetMapping(produces="application/json")
@@ -81,9 +93,14 @@ public class OrderApiController {
   }
 
   // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  // Ejercicio 15: Motor de cupones con reglas y fecha de expiración
   public Mono<TacoOrder> calculateOrderPrices(TacoOrder order) {
     if (order.getTacos() == null || order.getTacos().isEmpty()) {
+      order.setSubTotal(BigDecimal.ZERO);
       order.setTotal(BigDecimal.ZERO);
+      if (couponEngine != null) {
+        return couponEngine.applyCoupon(order, new java.util.Date());
+      }
       return Mono.just(order);
     }
 
@@ -112,14 +129,22 @@ public class OrderApiController {
         .collectList()
         .map(tacos -> {
           order.setTacos(tacos);
-          BigDecimal total = BigDecimal.ZERO;
+          BigDecimal subTotal = BigDecimal.ZERO;
           for (Taco taco : tacos) {
             BigDecimal unitPrice = taco.getPrice() != null ? taco.getPrice() : BigDecimal.ZERO;
             int qty = taco.getQuantity();
-            total = total.add(unitPrice.multiply(BigDecimal.valueOf(qty)));
+            subTotal = subTotal.add(unitPrice.multiply(BigDecimal.valueOf(qty)));
           }
-          order.setTotal(total);
+          order.setSubTotal(subTotal);
+          order.setTotal(subTotal);
           return order;
+        })
+        .flatMap(computedOrder -> {
+          // Ejercicio 15: Motor de cupones con reglas y fecha de expiración
+          if (couponEngine != null) {
+            return couponEngine.applyCoupon(computedOrder, new java.util.Date());
+          }
+          return Mono.just(computedOrder);
         });
   }
 

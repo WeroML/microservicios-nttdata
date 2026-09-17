@@ -9,8 +9,10 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.Date;
 
 import reactor.core.publisher.Mono;
+import tacos.Coupon;
 import tacos.Ingredient;
 import tacos.Taco;
 import tacos.TacoOrder;
@@ -18,6 +20,7 @@ import tacos.data.IngredientRepository;
 import tacos.data.OrderRepository;
 import tacos.data.TacoRepository;
 import tacos.messaging.OrderMessagingService;
+import tacos.web.api.CouponEngine;
 import tacos.web.api.EmailOrder;
 import tacos.web.api.EmailOrderService;
 import tacos.web.api.OrderApiController;
@@ -407,5 +410,97 @@ public class OrderApiControllerTest {
           .jsonPath("$.total").isEqualTo(7.50);
 
     verify(repo).save(any(TacoOrder.class));
+  }
+
+  // Ejercicio 15: Motor de cupones con reglas y fecha de expiración (Orden con cupón válido)
+  @Test
+  public void postOrder_withValidCoupon_shouldApplyDiscountAndReduceTotal() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+    CouponEngine couponEngine = Mockito.mock(CouponEngine.class);
+
+    Ingredient beef = new Ingredient("GRBF", "Ground Beef", Ingredient.Type.PROTEIN, new BigDecimal("2.50"), true, 10);
+    when(ingredientRepo.findById("GRBF")).thenReturn(Mono.just(beef));
+    when(repo.save(any(TacoOrder.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+    // Simulamos que el CouponEngine valida y aplica $2.00 de descuento sobre los $10.00 de subtotal
+    when(couponEngine.applyCoupon(any(TacoOrder.class), any(Date.class))).thenAnswer(inv -> {
+      TacoOrder order = inv.getArgument(0);
+      order.setCouponCode("SAVE2");
+      order.setDiscount(new BigDecimal("2.00"));
+      order.calculateTotal(); // subTotal: 10.00, discount: 2.00, total: 8.00
+      return Mono.just(order);
+    });
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo, couponEngine))
+        .build();
+
+    String orderJson = "{"
+        + "\"deliveryName\": \"Gustavo\","
+        + "\"couponCode\": \"SAVE2\","
+        + "\"tacos\": [{"
+        + "  \"name\": \"Beef Taco\","
+        + "  \"quantity\": 4,"
+        + "  \"ingredients\": [{\"id\": \"GRBF\"}]"
+        + "}]"
+        + "}";
+
+    testClient.post()
+        .uri("/api/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(orderJson)
+        .exchange()
+        .expectStatus().isCreated()
+        .expectBody()
+          .jsonPath("$.couponCode").isEqualTo("SAVE2")
+          .jsonPath("$.subTotal").isEqualTo(10.00)
+          .jsonPath("$.discount").isEqualTo(2.00)
+          .jsonPath("$.total").isEqualTo(8.00);
+
+    verify(couponEngine).applyCoupon(any(TacoOrder.class), any(Date.class));
+    verify(repo).save(any(TacoOrder.class));
+  }
+
+  // Ejercicio 15: Motor de cupones con reglas y fecha de expiración (Rechazo de cupón expirado)
+  @Test
+  public void postOrder_withExpiredCoupon_shouldReturn400BadRequest() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+    CouponEngine couponEngine = Mockito.mock(CouponEngine.class);
+
+    Ingredient beef = new Ingredient("GRBF", "Ground Beef", Ingredient.Type.PROTEIN, new BigDecimal("2.50"), true, 10);
+    when(ingredientRepo.findById("GRBF")).thenReturn(Mono.just(beef));
+
+    when(couponEngine.applyCoupon(any(TacoOrder.class), any(Date.class)))
+        .thenReturn(Mono.error(new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.BAD_REQUEST, "El cupón 'EXPIRED' ha expirado.")));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo, couponEngine))
+        .build();
+
+    String orderJson = "{"
+        + "\"deliveryName\": \"Gustavo\","
+        + "\"couponCode\": \"EXPIRED\","
+        + "\"tacos\": [{"
+        + "  \"name\": \"Beef Taco\","
+        + "  \"quantity\": 2,"
+        + "  \"ingredients\": [{\"id\": \"GRBF\"}]"
+        + "}]"
+        + "}";
+
+    testClient.post()
+        .uri("/api/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(orderJson)
+        .exchange()
+        .expectStatus().isBadRequest();
   }
 }

@@ -56,6 +56,11 @@ public class TacoOrder implements Serializable {
   // Ejercicio 14: Calcular precios y cantidades del lado servidor
   private java.math.BigDecimal total = java.math.BigDecimal.ZERO;
 
+  // Ejercicio 15: Motor de cupones con reglas y fecha de expiración
+  private String couponCode;
+  private java.math.BigDecimal subTotal = java.math.BigDecimal.ZERO;
+  private java.math.BigDecimal discount = java.math.BigDecimal.ZERO;
+
   public java.math.BigDecimal calculateTotal() {
     java.math.BigDecimal sum = java.math.BigDecimal.ZERO;
     if (this.tacos != null) {
@@ -66,7 +71,9 @@ public class TacoOrder implements Serializable {
         }
       }
     }
-    this.total = sum;
+    this.subTotal = sum;
+    java.math.BigDecimal disc = (this.discount != null && this.discount.compareTo(java.math.BigDecimal.ZERO) > 0) ? this.discount : java.math.BigDecimal.ZERO;
+    this.total = sum.subtract(disc).max(java.math.BigDecimal.ZERO);
     return this.total;
   }
 
