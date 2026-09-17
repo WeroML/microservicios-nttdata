@@ -39,26 +39,27 @@
 			<artifactId>tacocloud-security</artifactId>
 			<version>${tacocloud.version}</version>
 		</dependency>
+		<!-- Ejercicio 28: Elegir broker en runtime, no editando el POM -->
 		<dependency>
 			<groupId>sia</groupId>
 			<artifactId>tacocloud-messaging-noop</artifactId>
 			<version>${tacocloud.version}</version>
 		</dependency>
-<!--  		<dependency>
+		<dependency>
 			<groupId>sia</groupId>
 			<artifactId>tacocloud-messaging-jms</artifactId>
 			<version>${tacocloud.version}</version>
-		</dependency> -->
- 		<!-- <dependency>
+		</dependency>
+ 		<dependency>
 			<groupId>sia</groupId>
 			<artifactId>tacocloud-messaging-rabbitmq</artifactId>
 			<version>${tacocloud.version}</version>
-		</dependency> -->
-<!--   		<dependency>
+		</dependency>
+  		<dependency>
 			<groupId>sia</groupId>
 			<artifactId>tacocloud-messaging-kafka</artifactId>
 			<version>${tacocloud.version}</version>
-		</dependency> -->
+		</dependency>
 
 		<!-- Necessary Boot starters -->
 		<dependency>

@@ -13,7 +13,8 @@ import tacos.events.OrderEvent;
 import tacos.events.OrderEventType;
 
 // Ejercicio 27: Contrato único de eventos de orden
-@Service
+// Ejercicio 28: Elegir broker en runtime, no editando el POM
+@Service("noopOrderMessagingService")
 @Slf4j
 public class NoOpOrderMessagingService
        implements OrderMessagingService {

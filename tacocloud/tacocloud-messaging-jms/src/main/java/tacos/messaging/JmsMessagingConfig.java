@@ -3,16 +3,20 @@ package tacos.messaging;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jms.core.JmsTemplate;
 import org.springframework.jms.support.converter.MappingJackson2MessageConverter;
 
 import tacos.TacoOrder;
 
+// Ejercicio 28: Elegir broker en runtime, no editando el POM
 @Configuration
-public class MessagingConfig {
+@ConditionalOnClass(JmsTemplate.class)
+public class JmsMessagingConfig {
 
-  @Bean
+  @Bean("jmsMessageConverter")
   public MappingJackson2MessageConverter messageConverter() {
     MappingJackson2MessageConverter messageConverter =
                             new MappingJackson2MessageConverter();

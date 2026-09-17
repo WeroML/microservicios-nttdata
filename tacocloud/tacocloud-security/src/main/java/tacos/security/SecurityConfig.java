@@ -53,6 +53,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         .antMatchers(HttpMethod.DELETE, "/api/tacos/**").hasRole("USER")
         // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
         .antMatchers("/api/kitchen/**").hasRole("ADMIN")
+        // Ejercicio 28: Elegir broker en runtime, no editando el POM
+        .antMatchers("/api/messaging/**").hasRole("ADMIN")
         
         // Principio DENY-BY-DEFAULT: Cualquier otra ruta exige autenticación
         .anyRequest().authenticated()
