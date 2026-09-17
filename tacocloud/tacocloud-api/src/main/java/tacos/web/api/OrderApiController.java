@@ -35,6 +35,8 @@ import tacos.data.UserRepository;
 import javax.validation.Valid;
 
 import tacos.TacoOrder.OrderStatus;
+import tacos.events.OrderEvent;
+import tacos.events.OrderEventType;
 import tacos.messaging.OrderMessagingService;
 import tacos.web.api.dto.ClaimOrderRequest;
 import tacos.web.api.dto.KitchenQueueItem;
@@ -293,15 +295,21 @@ public class OrderApiController {
 
               return releaseInventoryMono
                   .then(repo.save(order))
-                  .map(savedOrder -> OrderStatusResponse.builder()
-                      .orderId(savedOrder.getId())
-                      .previousStatus(current)
-                      .currentStatus(savedOrder.getStatus())
-                      .reason(request.getReason())
-                      .updatedAt(new Date())
-                      .allowedNextStates(savedOrder.getStatus().allowedNextStates())
-                      .terminal(savedOrder.getStatus().isTerminal())
-                      .build());
+                  .map(savedOrder -> {
+                    // Ejercicio 27: Contrato único de eventos de orden
+                    if (orderMessages != null) {
+                      orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.fromOrderStatus(savedOrder.getStatus())));
+                    }
+                    return OrderStatusResponse.builder()
+                        .orderId(savedOrder.getId())
+                        .previousStatus(current)
+                        .currentStatus(savedOrder.getStatus())
+                        .reason(request.getReason())
+                        .updatedAt(new Date())
+                        .allowedNextStates(savedOrder.getStatus().allowedNextStates())
+                        .terminal(savedOrder.getStatus().isTerminal())
+                        .build();
+                  });
             }));
   }
 
@@ -388,7 +396,12 @@ public class OrderApiController {
           return Mono.just(newOrder);
         })
         .flatMap(repo::save)
-        .doOnNext(orderMessages::sendOrder);
+        .doOnNext(savedOrder -> {
+          if (orderMessages != null) {
+            orderMessages.sendOrder(savedOrder);
+            orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.ORDER_CREATED));
+          }
+        });
   }
 
   // Ejercicio 24: Reordenar una compra anterior con reglas actuales
@@ -539,7 +552,12 @@ public class OrderApiController {
           return Mono.just(ord);
         })
         .flatMap(repo::save)
-        .doOnNext(orderMessages::sendOrder);
+        .doOnNext(savedOrder -> {
+          if (orderMessages != null) {
+            orderMessages.sendOrder(savedOrder);
+            orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.ORDER_CREATED));
+          }
+        });
   }
 
   // Ejercicio 18: Taco Physics: reglas componibles de diseño
@@ -648,7 +666,12 @@ public class OrderApiController {
           return Mono.just(ord);
         })
         .flatMap(repo::save)
-        .doOnNext(orderMessages::sendOrder);
+        .doOnNext(savedOrder -> {
+          if (orderMessages != null) {
+            orderMessages.sendOrder(savedOrder);
+            orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.ORDER_CREATED));
+          }
+        });
   }
 
   //Ejercicio 5: PUT y DELETE de órdenes con identidad consistente

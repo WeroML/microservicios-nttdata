@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
 import tacos.TacoOrder;
 
+// Ejercicio 27: Contrato único de eventos de orden
 @Component
 @Slf4j
 public class KitchenUI {
@@ -13,6 +14,10 @@ public class KitchenUI {
     // TODO: Beef this up to do more than just log the received taco.
     //       To display it in some sort of UI.
     log.info("RECEIVED ORDER:  " + order);
+  }
+
+  public void displayOrderEvent(Object event) {
+    log.info("RECEIVED CANONICAL ORDER EVENT: {}", event);
   }
   
 }

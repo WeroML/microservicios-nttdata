@@ -16,20 +16,30 @@ import tacos.TacoOrder;
 import tacos.TacoOrder.OrderStatus;
 import tacos.User;
 import tacos.data.OrderRepository;
+import tacos.events.OrderEvent;
+import tacos.events.OrderEventType;
+import tacos.messaging.OrderMessagingService;
 import tacos.web.api.dto.ClaimOrderRequest;
 import tacos.web.api.dto.KitchenQueueItem;
 import tacos.web.api.dto.KitchenQueueResponse;
 import tacos.web.api.dto.OrderEtaResponse;
 
 // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+// Ejercicio 27: Contrato único de eventos de orden
 @Service
 public class KitchenService {
 
   private final OrderRepository repo;
+  private final OrderMessagingService orderMessages;
+
+  public KitchenService(OrderRepository repo) {
+    this(repo, null);
+  }
 
   @Autowired
-  public KitchenService(OrderRepository repo) {
+  public KitchenService(OrderRepository repo, @Autowired(required = false) OrderMessagingService orderMessages) {
     this.repo = repo;
+    this.orderMessages = orderMessages;
   }
 
   /**
@@ -126,7 +136,12 @@ public class KitchenService {
           order.setEstimatedReadyAt(readyAt);
 
           return repo.save(order)
-              .map(saved -> toQueueItem(saved, 1, 0, prepMinutes, readyAt, 0L));
+              .map(saved -> {
+                if (orderMessages != null) {
+                  orderMessages.sendOrderEvent(OrderEvent.fromOrder(saved, OrderEventType.ORDER_PREPARING));
+                }
+                return toQueueItem(saved, 1, 0, prepMinutes, readyAt, 0L);
+              });
         });
   }
 
@@ -154,7 +169,12 @@ public class KitchenService {
           order.setClaimedAt(null);
 
           return repo.save(order)
-              .map(saved -> toQueueItem(saved, 1, 0, saved.getEstimatedPrepMinutes() != null ? saved.getEstimatedPrepMinutes() : 5, null, 0L));
+              .map(saved -> {
+                if (orderMessages != null) {
+                  orderMessages.sendOrderEvent(OrderEvent.fromOrder(saved, OrderEventType.ORDER_CONFIRMED));
+                }
+                return toQueueItem(saved, 1, 0, saved.getEstimatedPrepMinutes() != null ? saved.getEstimatedPrepMinutes() : 5, null, 0L);
+              });
         });
   }
 

@@ -9,7 +9,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import tacos.TacoOrder;
+import tacos.events.OrderEvent;
 
+// Ejercicio 27: Contrato único de eventos de orden
 @Service
 public class RabbitOrderMessagingService
        implements OrderMessagingService {
@@ -21,6 +23,7 @@ public class RabbitOrderMessagingService
     this.rabbit = rabbit;
   }
   
+  @Override
   public void sendOrder(TacoOrder order) {
     rabbit.convertAndSend("tacocloud.order.queue", order,
         new MessagePostProcessor() {
@@ -32,6 +35,20 @@ public class RabbitOrderMessagingService
             return message;
           } 
         });
+  }
+
+  @Override
+  public void sendOrderEvent(OrderEvent event) {
+    if (event != null) {
+      rabbit.convertAndSend("tacocloud.order.queue", event, message -> {
+        MessageProperties props = message.getMessageProperties();
+        props.setHeader("X_EVENT_ID", event.getEventId());
+        props.setHeader("X_EVENT_TYPE", event.getEventType() != null ? event.getEventType().name() : "UNKNOWN");
+        props.setHeader("X_EVENT_VERSION", event.getVersion());
+        props.setHeader("X_ORDER_SOURCE", event.getSource() != null ? event.getSource() : "WEB");
+        return message;
+      });
+    }
   }
   
 }
