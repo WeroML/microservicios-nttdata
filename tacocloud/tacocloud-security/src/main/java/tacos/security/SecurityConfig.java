@@ -46,6 +46,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         // Roles útiles: Creación y gestión de órdenes y tacos requiere ROLE_USER
         .antMatchers("/api/orders/**").hasRole("USER")
         .antMatchers(HttpMethod.POST, "/api/tacos/**").hasRole("USER")
+        // Ejercicio 21: Favoritos por usuario sin confiar en userId del cliente
+        .antMatchers("/api/favorites/**").hasRole("USER")
         
         // Principio DENY-BY-DEFAULT: Cualquier otra ruta exige autenticación
         .anyRequest().authenticated()
