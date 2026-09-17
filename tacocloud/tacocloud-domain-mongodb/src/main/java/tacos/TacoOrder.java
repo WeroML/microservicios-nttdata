@@ -124,6 +124,13 @@ public class TacoOrder implements Serializable {
       return this == DELIVERED || this == CANCELLED;
     }
   }
+
   private OrderStatus status = OrderStatus.CONFIRMED;
+
+  // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+  private String claimedBy;
+  private Date claimedAt;
+  private Integer estimatedPrepMinutes;
+  private Date estimatedReadyAt;
 
 }

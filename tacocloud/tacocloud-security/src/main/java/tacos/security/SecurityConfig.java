@@ -51,6 +51,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         .antMatchers("/api/favorites/**").hasRole("USER")
         // Ejercicio 22: Calificaciones y ranking de tacos
         .antMatchers(HttpMethod.DELETE, "/api/tacos/**").hasRole("USER")
+        // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+        .antMatchers("/api/kitchen/**").hasRole("ADMIN")
         
         // Principio DENY-BY-DEFAULT: Cualquier otra ruta exige autenticación
         .anyRequest().authenticated()

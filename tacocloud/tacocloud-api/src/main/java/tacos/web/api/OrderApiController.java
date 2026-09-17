@@ -36,6 +36,10 @@ import javax.validation.Valid;
 
 import tacos.TacoOrder.OrderStatus;
 import tacos.messaging.OrderMessagingService;
+import tacos.web.api.dto.ClaimOrderRequest;
+import tacos.web.api.dto.KitchenQueueItem;
+import tacos.web.api.dto.KitchenQueueResponse;
+import tacos.web.api.dto.OrderEtaResponse;
 import tacos.web.api.dto.OrderResponse;
 import tacos.web.api.dto.OrderStatusResponse;
 import tacos.web.api.dto.PagedResponse;
@@ -61,11 +65,13 @@ public class OrderApiController {
   private TacoPhysicsEngine physicsEngine;
   // Ejercicio 23: Historial paginado y privado de órdenes
   private UserRepository userRepo;
+  // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+  private KitchenService kitchenService;
 
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
                             EmailOrderService emailOrderService) {
-    this(repo, orderMessages, emailOrderService, null, null, null, null, null, null);
+    this(repo, orderMessages, emailOrderService, null, null, null, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -73,7 +79,7 @@ public class OrderApiController {
                             EmailOrderService emailOrderService,
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -82,7 +88,7 @@ public class OrderApiController {
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -92,7 +98,7 @@ public class OrderApiController {
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine,
                             InventoryService inventoryService) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -103,7 +109,19 @@ public class OrderApiController {
                             CouponEngine couponEngine,
                             InventoryService inventoryService,
                             TacoPhysicsEngine physicsEngine) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, null, null);
+  }
+
+  public OrderApiController(OrderRepository repo,
+                            OrderMessagingService orderMessages,
+                            EmailOrderService emailOrderService,
+                            IngredientRepository ingredientRepo,
+                            TacoRepository tacoRepo,
+                            CouponEngine couponEngine,
+                            InventoryService inventoryService,
+                            TacoPhysicsEngine physicsEngine,
+                            UserRepository userRepo) {
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, userRepo, null);
   }
 
   @Autowired
@@ -115,7 +133,8 @@ public class OrderApiController {
                             CouponEngine couponEngine,
                             InventoryService inventoryService,
                             TacoPhysicsEngine physicsEngine,
-                            @Autowired(required = false) UserRepository userRepo) {
+                            @Autowired(required = false) UserRepository userRepo,
+                            @Autowired(required = false) KitchenService kitchenService) {
     this.repo = repo;
     this.orderMessages = orderMessages;
     this.emailOrderService = emailOrderService;
@@ -125,6 +144,7 @@ public class OrderApiController {
     this.inventoryService = inventoryService;
     this.physicsEngine = physicsEngine;
     this.userRepo = userRepo;
+    this.kitchenService = kitchenService != null ? kitchenService : new KitchenService(repo);
   }
 
   // Ejercicio 23: Historial paginado y privado de órdenes
@@ -283,6 +303,74 @@ public class OrderApiController {
                       .terminal(savedOrder.getStatus().isTerminal())
                       .build());
             }));
+  }
+
+  // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+  @GetMapping(path = "/queue", produces = "application/json")
+  public Mono<KitchenQueueResponse> getQueue(Principal principal) {
+    if (principal == null) {
+      return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario no autenticado"));
+    }
+    if (!isUserAdmin(principal)) {
+      return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+          "Acceso denegado: Solo personal de cocina o administradores (ROLE_ADMIN) pueden consultar la cola de cocina."));
+    }
+    return kitchenService.getKitchenQueue();
+  }
+
+  // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+  @GetMapping(path = "/kitchen/queue", produces = "application/json")
+  public Mono<KitchenQueueResponse> getKitchenQueue(Principal principal) {
+    return getQueue(principal);
+  }
+
+  // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+  @PostMapping(path = "/{orderId}/claim", produces = "application/json")
+  public Mono<KitchenQueueItem> claimOrder(
+      @PathVariable("orderId") String orderId,
+      @RequestBody(required = false) ClaimOrderRequest request,
+      Principal principal) {
+    if (principal == null) {
+      return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario no autenticado"));
+    }
+    if (!isUserAdmin(principal)) {
+      return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+          "Acceso denegado: Solo personal de cocina o administradores (ROLE_ADMIN) pueden tomar órdenes."));
+    }
+    String chefId = principal.getName();
+    return kitchenService.claimOrder(orderId, chefId, request);
+  }
+
+  // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+  @PostMapping(path = "/{orderId}/unclaim", produces = "application/json")
+  public Mono<KitchenQueueItem> unclaimOrder(
+      @PathVariable("orderId") String orderId,
+      Principal principal) {
+    if (principal == null) {
+      return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario no autenticado"));
+    }
+    if (!isUserAdmin(principal)) {
+      return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+          "Acceso denegado: Solo personal de cocina o administradores (ROLE_ADMIN) pueden liberar órdenes."));
+    }
+    String chefId = principal.getName();
+    boolean isAdmin = isUserAdmin(principal);
+    return kitchenService.unclaimOrder(orderId, chefId, isAdmin);
+  }
+
+  // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+  @GetMapping(path = "/{orderId}/eta", produces = "application/json")
+  public Mono<OrderEtaResponse> getOrderEta(
+      @PathVariable("orderId") String orderId,
+      Principal principal) {
+    if (principal == null) {
+      return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario no autenticado"));
+    }
+    return resolveAuthenticatedUser(principal)
+        .flatMap(user -> {
+          boolean isAdmin = isUserAdmin(principal);
+          return kitchenService.getOrderEta(orderId, user, isAdmin);
+        });
   }
 
   // Ejercicio 24: Reordenar una compra anterior con reglas actuales

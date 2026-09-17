@@ -20,4 +20,11 @@ public interface OrderRepository
   Flux<TacoOrder> findByUser(User user);
 
   Mono<Long> countByUser(User user);
+
+  // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
+  Flux<TacoOrder> findByStatusOrderByPlacedAtAsc(TacoOrder.OrderStatus status);
+
+  Flux<TacoOrder> findByStatusInOrderByPlacedAtAsc(java.util.Collection<TacoOrder.OrderStatus> statuses);
+
+  Mono<Long> countByStatus(TacoOrder.OrderStatus status);
 }
