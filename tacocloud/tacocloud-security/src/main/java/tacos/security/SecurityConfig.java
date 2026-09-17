@@ -48,6 +48,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         .antMatchers(HttpMethod.POST, "/api/tacos/**").hasRole("USER")
         // Ejercicio 21: Favoritos por usuario sin confiar en userId del cliente
         .antMatchers("/api/favorites/**").hasRole("USER")
+        // Ejercicio 22: Calificaciones y ranking de tacos
+        .antMatchers(HttpMethod.DELETE, "/api/tacos/**").hasRole("USER")
         
         // Principio DENY-BY-DEFAULT: Cualquier otra ruta exige autenticación
         .anyRequest().authenticated()
