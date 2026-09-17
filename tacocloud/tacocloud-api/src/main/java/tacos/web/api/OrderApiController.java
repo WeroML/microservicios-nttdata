@@ -34,6 +34,7 @@ import tacos.data.TacoRepository;
 import tacos.data.UserRepository;
 import tacos.messaging.OrderMessagingService;
 import tacos.web.api.dto.PagedResponse;
+import tacos.web.api.dto.ReorderRequest;
 
 @RestController
 @RequestMapping(path="/api/orders",
@@ -169,6 +170,145 @@ public class OrderApiController {
                     "Acceso denegado: No está autorizado para consultar la orden de otro usuario."));
               }
               return Mono.just(order);
+            }));
+  }
+
+  // Ejercicio 24: Reordenar una compra anterior con reglas actuales
+  @PostMapping(path = "/{orderId}/reorder", produces = "application/json")
+  @ResponseStatus(HttpStatus.CREATED)
+  public Mono<TacoOrder> reorderOrder(
+      @PathVariable("orderId") String orderId,
+      @RequestBody(required = false) ReorderRequest reorderRequest,
+      Principal principal) {
+    return prepareReorder(orderId, reorderRequest, principal)
+        .flatMap(newOrder -> {
+          if (inventoryService != null) {
+            return inventoryService.reserveInventory(newOrder);
+          }
+          return Mono.just(newOrder);
+        })
+        .flatMap(repo::save)
+        .doOnNext(orderMessages::sendOrder);
+  }
+
+  // Ejercicio 24: Reordenar una compra anterior con reglas actuales
+  @GetMapping(path = "/{orderId}/reorder-preview", produces = "application/json")
+  public Mono<TacoOrder> previewReorder(
+      @PathVariable("orderId") String orderId,
+      @RequestParam(name = "couponCode", required = false) String couponCode,
+      @RequestParam(name = "dropExpiredCoupon", defaultValue = "false") boolean dropExpiredCoupon,
+      Principal principal) {
+    ReorderRequest req = new ReorderRequest();
+    req.setCouponCode(couponCode);
+    req.setDropExpiredCoupon(dropExpiredCoupon);
+    return prepareReorder(orderId, req, principal);
+  }
+
+  // Ejercicio 24: Reordenar una compra anterior con reglas actuales
+  private Mono<TacoOrder> prepareReorder(String orderId, ReorderRequest reorderRequest, Principal principal) {
+    return resolveAuthenticatedUser(principal)
+        .flatMap(user -> repo.findById(orderId)
+            .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Orden previa no encontrada: " + orderId)))
+            .flatMap(originalOrder -> {
+              if (!isOrderOwnedByUser(originalOrder, user)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Acceso denegado: No está autorizado para reordenar la compra de otro usuario."));
+              }
+
+              if (originalOrder.getTacos() == null || originalOrder.getTacos().isEmpty()) {
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La orden previa no contiene tacos para reordenar."));
+              }
+
+              TacoOrder newOrder = new TacoOrder();
+              newOrder.setUser(user);
+              newOrder.setPlacedAt(new Date());
+              newOrder.setStatus(TacoOrder.OrderStatus.CONFIRMED);
+
+              // Delivery details
+              if (reorderRequest != null && reorderRequest.getDeliveryName() != null && !reorderRequest.getDeliveryName().trim().isEmpty()) {
+                newOrder.setDeliveryName(reorderRequest.getDeliveryName().trim());
+              } else {
+                newOrder.setDeliveryName(originalOrder.getDeliveryName());
+              }
+
+              if (reorderRequest != null && reorderRequest.getDeliveryStreet() != null && !reorderRequest.getDeliveryStreet().trim().isEmpty()) {
+                newOrder.setDeliveryStreet(reorderRequest.getDeliveryStreet().trim());
+              } else {
+                newOrder.setDeliveryStreet(originalOrder.getDeliveryStreet());
+              }
+
+              if (reorderRequest != null && reorderRequest.getDeliveryCity() != null && !reorderRequest.getDeliveryCity().trim().isEmpty()) {
+                newOrder.setDeliveryCity(reorderRequest.getDeliveryCity().trim());
+              } else {
+                newOrder.setDeliveryCity(originalOrder.getDeliveryCity());
+              }
+
+              if (reorderRequest != null && reorderRequest.getDeliveryState() != null && !reorderRequest.getDeliveryState().trim().isEmpty()) {
+                newOrder.setDeliveryState(reorderRequest.getDeliveryState().trim());
+              } else {
+                newOrder.setDeliveryState(originalOrder.getDeliveryState());
+              }
+
+              if (reorderRequest != null && reorderRequest.getDeliveryZip() != null && !reorderRequest.getDeliveryZip().trim().isEmpty()) {
+                newOrder.setDeliveryZip(reorderRequest.getDeliveryZip().trim());
+              } else {
+                newOrder.setDeliveryZip(originalOrder.getDeliveryZip());
+              }
+
+              // Payment details
+              if (reorderRequest != null && reorderRequest.getPaymentToken() != null && !reorderRequest.getPaymentToken().trim().isEmpty()) {
+                newOrder.setPaymentToken(reorderRequest.getPaymentToken().trim());
+                newOrder.setCcExpiration(reorderRequest.getCcExpiration());
+                newOrder.setLast4(reorderRequest.getLast4());
+              } else {
+                newOrder.setPaymentToken(originalOrder.getPaymentToken());
+                newOrder.setCcExpiration(originalOrder.getCcExpiration());
+                newOrder.setLast4(originalOrder.getLast4());
+              }
+
+              // Coupon resolution
+              String effectiveCoupon = null;
+              if (reorderRequest != null && reorderRequest.getCouponCode() != null) {
+                String c = reorderRequest.getCouponCode().trim();
+                effectiveCoupon = c.isEmpty() ? null : c;
+              } else {
+                effectiveCoupon = originalOrder.getCouponCode();
+              }
+              newOrder.setCouponCode(effectiveCoupon);
+
+              // Clone tacos
+              java.util.List<Taco> clonedTacos = new java.util.ArrayList<>();
+              for (Taco ot : originalOrder.getTacos()) {
+                Taco ct = new Taco();
+                ct.setId(ot.getId());
+                ct.setName(ot.getName());
+                ct.setQuantity(ot.getQuantity() != null && ot.getQuantity() > 0 ? ot.getQuantity() : 1);
+                if (ot.getIngredients() != null) {
+                  clonedTacos.add(ct);
+                  ct.setIngredients(new java.util.ArrayList<>(ot.getIngredients()));
+                } else {
+                  clonedTacos.add(ct);
+                }
+              }
+              newOrder.setTacos(clonedTacos);
+
+              return validateTacoPhysics(newOrder)
+                  .flatMap(ord -> {
+                    Mono<TacoOrder> pricing = calculateOrderPrices(ord);
+                    if (reorderRequest != null && Boolean.TRUE.equals(reorderRequest.getDropExpiredCoupon())) {
+                      pricing = pricing.onErrorResume(ResponseStatusException.class, ex -> {
+                        if (ex.getStatus() == HttpStatus.BAD_REQUEST && ex.getReason() != null
+                            && ex.getReason().toLowerCase().contains("expirado")) {
+                          ord.setCouponCode(null);
+                          ord.setDiscount(BigDecimal.ZERO);
+                          return calculateOrderPrices(ord);
+                        }
+                        return Mono.error(ex);
+                      });
+                    }
+                    return pricing;
+                  });
             }));
   }
 
