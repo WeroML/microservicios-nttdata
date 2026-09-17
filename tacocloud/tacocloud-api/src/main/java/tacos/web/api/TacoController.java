@@ -1,10 +1,12 @@
 package tacos.web.api;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import javax.validation.Valid;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -26,6 +28,7 @@ import tacos.Taco;
 import tacos.data.TacoRepository;
 import tacos.physics.PhysicsResult;
 import tacos.web.api.dto.PagedResponse;
+import tacos.web.api.dto.TacoOfTheDayResponse;
 import tacos.web.api.dto.TacoRequest;
 import tacos.web.api.dto.TacoResponse;
 import tacos.web.api.dto.TacoSearchCriteria;
@@ -39,22 +42,30 @@ public class TacoController {
   private TacoPhysicsEngine physicsEngine;
   // Ejercicio 19: Buscar, filtrar, ordenar y paginar tacos
   private TacoQueryService queryService;
+  // Ejercicio 20: Taco del día determinista y comprobable
+  private TacoOfTheDayService tacoOfTheDayService;
 
   public TacoController(TacoRepository tacoRepo) {
-    this(tacoRepo, null, new TacoQueryService(tacoRepo));
+    this(tacoRepo, null, new TacoQueryService(tacoRepo), new TacoOfTheDayService(tacoRepo));
   }
 
   public TacoController(TacoRepository tacoRepo, TacoPhysicsEngine physicsEngine) {
-    this(tacoRepo, physicsEngine, new TacoQueryService(tacoRepo));
+    this(tacoRepo, physicsEngine, new TacoQueryService(tacoRepo), new TacoOfTheDayService(tacoRepo));
+  }
+
+  public TacoController(TacoRepository tacoRepo, TacoPhysicsEngine physicsEngine, TacoQueryService queryService) {
+    this(tacoRepo, physicsEngine, queryService, new TacoOfTheDayService(tacoRepo));
   }
 
   @Autowired
   public TacoController(TacoRepository tacoRepo,
                         @Autowired(required = false) TacoPhysicsEngine physicsEngine,
-                        @Autowired(required = false) TacoQueryService queryService) {
+                        @Autowired(required = false) TacoQueryService queryService,
+                        @Autowired(required = false) TacoOfTheDayService tacoOfTheDayService) {
     this.tacoRepo = tacoRepo;
     this.physicsEngine = physicsEngine;
     this.queryService = (queryService != null) ? queryService : new TacoQueryService(tacoRepo);
+    this.tacoOfTheDayService = (tacoOfTheDayService != null) ? tacoOfTheDayService : new TacoOfTheDayService(tacoRepo);
   }
 
   @GetMapping(params="recent")
@@ -62,6 +73,17 @@ public class TacoController {
     return tacoRepo.findAll()
         .take(12)
         .map(TacoResponse::fromEntity);
+  }
+
+  // Ejercicio 20: Taco del día determinista y comprobable
+  @GetMapping(path = {"/taco-of-the-day", "/daily"})
+  public Mono<ResponseEntity<TacoOfTheDayResponse>> tacoOfTheDay(
+      @RequestParam(name = "date", required = false)
+      @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+      LocalDate date) {
+    return tacoOfTheDayService.getTacoOfTheDay(date)
+        .map(ResponseEntity::ok)
+        .defaultIfEmpty(ResponseEntity.notFound().build());
   }
 
   // Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
