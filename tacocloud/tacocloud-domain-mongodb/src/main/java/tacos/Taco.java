@@ -65,4 +65,30 @@ public class Taco {
     this.price = sum;
     return this.price;
   }
+
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire
+  public boolean hasSufficientStock(int requiredQty) {
+    if (this.stock == null) {
+      return true;
+    }
+    return isAvailable() && this.stock >= requiredQty;
+  }
+
+  public void decrementStock(int quantity) {
+    if (this.stock != null) {
+      this.stock = Math.max(0, this.stock - quantity);
+      if (this.stock == 0) {
+        this.available = false;
+      }
+    }
+  }
+
+  public void incrementStock(int quantity) {
+    if (this.stock != null) {
+      this.stock += quantity;
+      if (this.stock > 0) {
+        this.available = true;
+      }
+    }
+  }
 }

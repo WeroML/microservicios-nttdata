@@ -40,11 +40,13 @@ public class OrderApiController {
   private TacoRepository tacoRepo;
   // Ejercicio 15: Motor de cupones con reglas y fecha de expiración
   private CouponEngine couponEngine;
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire
+  private InventoryService inventoryService;
 
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
                             EmailOrderService emailOrderService) {
-    this(repo, orderMessages, emailOrderService, null, null, null);
+    this(repo, orderMessages, emailOrderService, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -52,7 +54,16 @@ public class OrderApiController {
                             EmailOrderService emailOrderService,
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null);
+  }
+
+  public OrderApiController(OrderRepository repo,
+                            OrderMessagingService orderMessages,
+                            EmailOrderService emailOrderService,
+                            IngredientRepository ingredientRepo,
+                            TacoRepository tacoRepo,
+                            CouponEngine couponEngine) {
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null);
   }
 
   @Autowired
@@ -61,13 +72,15 @@ public class OrderApiController {
                             EmailOrderService emailOrderService,
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo,
-                            CouponEngine couponEngine) {
+                            CouponEngine couponEngine,
+                            InventoryService inventoryService) {
     this.repo = repo;
     this.orderMessages = orderMessages;
     this.emailOrderService = emailOrderService;
     this.ingredientRepo = ingredientRepo;
     this.tacoRepo = tacoRepo;
     this.couponEngine = couponEngine;
+    this.inventoryService = inventoryService;
   }
 
   @GetMapping(produces="application/json")
@@ -84,10 +97,17 @@ public class OrderApiController {
 //  }
 
   // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire
   @PostMapping(consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrder(@RequestBody TacoOrder order) {
     return calculateOrderPrices(order)
+        .flatMap(ord -> {
+          if (inventoryService != null) {
+            return inventoryService.reserveInventory(ord);
+          }
+          return Mono.just(ord);
+        })
         .flatMap(repo::save)
         .doOnNext(orderMessages::sendOrder);
   }
@@ -180,6 +200,12 @@ public class OrderApiController {
   public Mono<TacoOrder> postOrderFromEmail(@RequestBody Mono<EmailOrder> emailOrder) {
     return emailOrderService.convertEmailOrderToDomainOrder(emailOrder)
         .flatMap(this::calculateOrderPrices)
+        .flatMap(ord -> {
+          if (inventoryService != null) {
+            return inventoryService.reserveInventory(ord);
+          }
+          return Mono.just(ord);
+        })
         .flatMap(repo::save)
         .doOnNext(orderMessages::sendOrder);
   }
@@ -230,13 +256,16 @@ public class OrderApiController {
         .flatMap(repo::save).switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)));
   }
 
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire
   @DeleteMapping("/{orderId}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public Mono<Void> deleteOrder(@PathVariable("orderId") String orderId) {
-    try {
-      repo.deleteById(orderId);
-    } catch (EmptyResultDataAccessException e) {}
-    return Mono.empty();
+    if (inventoryService != null) {
+      return repo.findById(orderId)
+          .flatMap(inventoryService::releaseInventory)
+          .then(Mono.defer(() -> repo.deleteById(orderId)));
+    }
+    return repo.deleteById(orderId);
   }
 
 }

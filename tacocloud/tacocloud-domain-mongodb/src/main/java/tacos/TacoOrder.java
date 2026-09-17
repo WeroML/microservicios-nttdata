@@ -77,4 +77,12 @@ public class TacoOrder implements Serializable {
     return this.total;
   }
 
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire
+  public enum OrderStatus {
+    PENDING,
+    CONFIRMED,
+    CANCELLED
+  }
+  private OrderStatus status = OrderStatus.CONFIRMED;
+
 }

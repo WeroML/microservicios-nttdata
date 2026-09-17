@@ -23,6 +23,7 @@ import tacos.messaging.OrderMessagingService;
 import tacos.web.api.CouponEngine;
 import tacos.web.api.EmailOrder;
 import tacos.web.api.EmailOrderService;
+import tacos.web.api.InventoryService;
 import tacos.web.api.OrderApiController;
 
 public class OrderApiControllerTest {
@@ -502,5 +503,119 @@ public class OrderApiControllerTest {
         .bodyValue(orderJson)
         .exchange()
         .expectStatus().isBadRequest();
+  }
+
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire (Reserva exitosa de stock)
+  @Test
+  public void postOrder_shouldReserveInventoryWhenStockIsAvailable() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+    InventoryService inventoryService = Mockito.mock(InventoryService.class);
+
+    Ingredient beef = new Ingredient("GRBF", "Ground Beef", Ingredient.Type.PROTEIN, new BigDecimal("2.50"), true, 20);
+    when(ingredientRepo.findById("GRBF")).thenReturn(Mono.just(beef));
+
+    when(inventoryService.reserveInventory(any(TacoOrder.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+    when(repo.save(any(TacoOrder.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo, null, inventoryService))
+        .build();
+
+    String orderJson = "{"
+        + "\"deliveryName\": \"Gustavo\","
+        + "\"tacos\": [{"
+        + "  \"name\": \"Beef Taco\","
+        + "  \"quantity\": 2,"
+        + "  \"ingredients\": [{\"id\": \"GRBF\"}]"
+        + "}]"
+        + "}";
+
+    testClient.post()
+        .uri("/api/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(orderJson)
+        .exchange()
+        .expectStatus().isCreated()
+        .expectBody()
+          .jsonPath("$.deliveryName").isEqualTo("Gustavo");
+
+    verify(inventoryService).reserveInventory(any(TacoOrder.class));
+    verify(repo).save(any(TacoOrder.class));
+  }
+
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire (Rechazo con 409 Conflict si falta stock)
+  @Test
+  public void postOrder_whenStockInsufficient_shouldReturn409ConflictWithoutSellingAir() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+    InventoryService inventoryService = Mockito.mock(InventoryService.class);
+
+    Ingredient beef = new Ingredient("GRBF", "Ground Beef", Ingredient.Type.PROTEIN, new BigDecimal("2.50"), true, 1);
+    when(ingredientRepo.findById("GRBF")).thenReturn(Mono.just(beef));
+
+    when(inventoryService.reserveInventory(any(TacoOrder.class)))
+        .thenReturn(Mono.error(new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.CONFLICT, "Stock insuficiente para el ingrediente 'Ground Beef'.")));
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo, null, inventoryService))
+        .build();
+
+    String orderJson = "{"
+        + "\"deliveryName\": \"Gustavo\","
+        + "\"tacos\": [{"
+        + "  \"name\": \"Beef Taco\","
+        + "  \"quantity\": 5,"
+        + "  \"ingredients\": [{\"id\": \"GRBF\"}]"
+        + "}]"
+        + "}";
+
+    testClient.post()
+        .uri("/api/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(orderJson)
+        .exchange()
+        .expectStatus().isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+
+    // Verificamos que NO se guardó la orden (no se vendió aire)
+    Mockito.verify(repo, Mockito.never()).save(any(TacoOrder.class));
+  }
+
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire (Liberar stock al eliminar orden)
+  @Test
+  public void deleteOrder_shouldReleaseInventoryBeforeDeleting() {
+    OrderRepository repo = Mockito.mock(OrderRepository.class);
+    OrderMessagingService messagingService = Mockito.mock(OrderMessagingService.class);
+    EmailOrderService emailService = Mockito.mock(EmailOrderService.class);
+    IngredientRepository ingredientRepo = Mockito.mock(IngredientRepository.class);
+    TacoRepository tacoRepo = Mockito.mock(TacoRepository.class);
+    CouponEngine couponEngine = Mockito.mock(CouponEngine.class);
+    InventoryService inventoryService = Mockito.mock(InventoryService.class);
+
+    TacoOrder existingOrder = new TacoOrder();
+    existingOrder.setId("ORDER_TO_CANCEL");
+
+    when(repo.findById("ORDER_TO_CANCEL")).thenReturn(Mono.just(existingOrder));
+    when(inventoryService.releaseInventory(existingOrder)).thenReturn(Mono.empty());
+    when(repo.deleteById("ORDER_TO_CANCEL")).thenReturn(Mono.empty());
+
+    WebTestClient testClient = WebTestClient.bindToController(
+        new OrderApiController(repo, messagingService, emailService, ingredientRepo, tacoRepo, couponEngine, inventoryService))
+        .build();
+
+    testClient.delete()
+        .uri("/api/orders/ORDER_TO_CANCEL")
+        .exchange()
+        .expectStatus().isNoContent();
+
+    verify(inventoryService).releaseInventory(existingOrder);
+    verify(repo).deleteById("ORDER_TO_CANCEL");
   }
 }
