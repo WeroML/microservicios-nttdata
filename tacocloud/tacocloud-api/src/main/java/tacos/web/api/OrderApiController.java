@@ -1,10 +1,14 @@
 package tacos.web.api;
 
 import java.math.BigDecimal;
+import java.security.Principal;
+import java.util.Date;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -22,10 +27,13 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import tacos.Taco;
 import tacos.TacoOrder;
+import tacos.User;
 import tacos.data.IngredientRepository;
 import tacos.data.OrderRepository;
 import tacos.data.TacoRepository;
+import tacos.data.UserRepository;
 import tacos.messaging.OrderMessagingService;
+import tacos.web.api.dto.PagedResponse;
 
 @RestController
 @RequestMapping(path="/api/orders",
@@ -44,11 +52,13 @@ public class OrderApiController {
   private InventoryService inventoryService;
   // Ejercicio 18: Taco Physics: reglas componibles de diseño
   private TacoPhysicsEngine physicsEngine;
+  // Ejercicio 23: Historial paginado y privado de órdenes
+  private UserRepository userRepo;
 
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
                             EmailOrderService emailOrderService) {
-    this(repo, orderMessages, emailOrderService, null, null, null, null, null);
+    this(repo, orderMessages, emailOrderService, null, null, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -56,7 +66,7 @@ public class OrderApiController {
                             EmailOrderService emailOrderService,
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -65,7 +75,7 @@ public class OrderApiController {
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -75,7 +85,18 @@ public class OrderApiController {
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine,
                             InventoryService inventoryService) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, null, null);
+  }
+
+  public OrderApiController(OrderRepository repo,
+                            OrderMessagingService orderMessages,
+                            EmailOrderService emailOrderService,
+                            IngredientRepository ingredientRepo,
+                            TacoRepository tacoRepo,
+                            CouponEngine couponEngine,
+                            InventoryService inventoryService,
+                            TacoPhysicsEngine physicsEngine) {
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, null);
   }
 
   @Autowired
@@ -86,7 +107,8 @@ public class OrderApiController {
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine,
                             InventoryService inventoryService,
-                            TacoPhysicsEngine physicsEngine) {
+                            TacoPhysicsEngine physicsEngine,
+                            @Autowired(required = false) UserRepository userRepo) {
     this.repo = repo;
     this.orderMessages = orderMessages;
     this.emailOrderService = emailOrderService;
@@ -95,28 +117,80 @@ public class OrderApiController {
     this.couponEngine = couponEngine;
     this.inventoryService = inventoryService;
     this.physicsEngine = physicsEngine;
+    this.userRepo = userRepo;
   }
 
+  // Ejercicio 23: Historial paginado y privado de órdenes
   @GetMapping(produces="application/json")
-  public Flux<TacoOrder> allOrders() {
-    return repo.findAll();
+  public Mono<ResponseEntity<PagedResponse<TacoOrder>>> allOrders(
+      @RequestParam(name = "page", defaultValue = "0") int page,
+      @RequestParam(name = "size", defaultValue = "10") int size,
+      Principal principal) {
+    return resolveAuthenticatedUser(principal)
+        .flatMap(user -> repo.findAll()
+            .filter(order -> isOrderOwnedByUser(order, user))
+            .collectList()
+            .map(userOrders -> {
+              // Ordenar por fecha descendente (más recientes primero)
+              userOrders.sort((o1, o2) -> {
+                Date d1 = o1.getPlacedAt() != null ? o1.getPlacedAt() : new Date(0);
+                Date d2 = o2.getPlacedAt() != null ? o2.getPlacedAt() : new Date(0);
+                return d2.compareTo(d1);
+              });
+
+              PagedResponse<TacoOrder> paged = PagedResponse.of(userOrders, page, size);
+              return ResponseEntity.ok()
+                  .header("X-Total-Count", String.valueOf(paged.getTotalElements()))
+                  .header("X-Total-Pages", String.valueOf(paged.getTotalPages()))
+                  .header("X-Current-Page", String.valueOf(paged.getPage()))
+                  .header("X-Page-Size", String.valueOf(paged.getSize()))
+                  .body(paged);
+            }));
   }
 
-//  @PostMapping(consumes="application/json")
-//  @ResponseStatus(HttpStatus.CREATED)
-//  public Mono<Order> postOrder(@RequestBody Mono<Order> order) {
-//    order.subscribe(orderMessages::sendOrder); // TODO: not ideal...work into reactive flow below
-//    return order
-//        .flatMap(repo::save);
-//  }
+  // Ejercicio 23: Historial paginado y privado de órdenes
+  @GetMapping(path = "/history", produces = "application/json")
+  public Mono<ResponseEntity<PagedResponse<TacoOrder>>> orderHistory(
+      @RequestParam(name = "page", defaultValue = "0") int page,
+      @RequestParam(name = "size", defaultValue = "10") int size,
+      Principal principal) {
+    return allOrders(page, size, principal);
+  }
+
+  // Ejercicio 23: Historial paginado y privado de órdenes
+  @GetMapping(path = "/{orderId}", produces = "application/json")
+  public Mono<TacoOrder> getOrderById(@PathVariable("orderId") String orderId, Principal principal) {
+    return resolveAuthenticatedUser(principal)
+        .flatMap(user -> repo.findById(orderId)
+            .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Orden no encontrada: " + orderId)))
+            .flatMap(order -> {
+              if (!isOrderOwnedByUser(order, user)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Acceso denegado: No está autorizado para consultar la orden de otro usuario."));
+              }
+              return Mono.just(order);
+            }));
+  }
 
   // Ejercicio 14: Calcular precios y cantidades del lado servidor
   // Ejercicio 16: Reservar y liberar inventario sin vender aire
   // Ejercicio 18: Taco Physics: reglas componibles de diseño
+  // Ejercicio 23: Historial paginado y privado de órdenes
   @PostMapping(consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
-  public Mono<TacoOrder> postOrder(@RequestBody TacoOrder order) {
-    return validateTacoPhysics(order)
+  public Mono<TacoOrder> postOrder(@RequestBody TacoOrder order,
+                                  @Autowired(required = false) Principal principal) {
+    Mono<TacoOrder> preparedOrder = (principal != null)
+        ? resolveAuthenticatedUser(principal)
+            .map(user -> {
+              order.setUser(user);
+              return order;
+            })
+            .defaultIfEmpty(order)
+        : Mono.just(order);
+
+    return preparedOrder
+        .flatMap(this::validateTacoPhysics)
         .flatMap(this::calculateOrderPrices)
         .flatMap(ord -> {
           if (inventoryService != null) {
@@ -284,15 +358,75 @@ public class OrderApiController {
   }
 
   // Ejercicio 16: Reservar y liberar inventario sin vender aire
+  // Ejercicio 23: Historial paginado y privado de órdenes
   @DeleteMapping("/{orderId}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public Mono<Void> deleteOrder(@PathVariable("orderId") String orderId) {
-    if (inventoryService != null) {
-      return repo.findById(orderId)
-          .flatMap(inventoryService::releaseInventory)
-          .then(Mono.defer(() -> repo.deleteById(orderId)));
+  public Mono<Void> deleteOrder(@PathVariable("orderId") String orderId,
+                                @Autowired(required = false) Principal principal) {
+    if (principal == null) {
+      if (inventoryService != null) {
+        return repo.findById(orderId)
+            .flatMap(inventoryService::releaseInventory)
+            .then(Mono.defer(() -> repo.deleteById(orderId)));
+      }
+      return repo.deleteById(orderId);
     }
-    return repo.deleteById(orderId);
+
+    return resolveAuthenticatedUser(principal)
+        .flatMap(user -> repo.findById(orderId)
+            .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Orden no encontrada: " + orderId)))
+            .flatMap(order -> {
+              if (!isOrderOwnedByUser(order, user)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Acceso denegado: No está autorizado para cancelar la orden de otro usuario."));
+              }
+              if (inventoryService != null) {
+                return inventoryService.releaseInventory(order)
+                    .then(Mono.defer(() -> repo.deleteById(orderId)));
+              }
+              return repo.deleteById(orderId);
+            }));
+  }
+
+  private Mono<User> resolveAuthenticatedUser(Principal principal) {
+    if (principal == null || principal.getName() == null || principal.getName().trim().isEmpty()) {
+      return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario no autenticado"));
+    }
+
+    if (principal instanceof Authentication) {
+      Object p = ((Authentication) principal).getPrincipal();
+      if (p instanceof User) {
+        return Mono.just((User) p);
+      }
+    }
+
+    if (userRepo != null) {
+      return userRepo.findByUsername(principal.getName().trim())
+          .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+              "Usuario autenticado no encontrado: " + principal.getName())));
+    }
+
+    User fallbackUser = new User(principal.getName(), "PROTECTED", principal.getName(), null, null, null, null, null, null);
+    fallbackUser.setId(principal.getName());
+    return Mono.just(fallbackUser);
+  }
+
+  private boolean isOrderOwnedByUser(TacoOrder order, User user) {
+    if (order == null || user == null) {
+      return false;
+    }
+    if (order.getUser() == null) {
+      return false;
+    }
+    if (order.getUser().getId() != null && user.getId() != null
+        && order.getUser().getId().equals(user.getId())) {
+      return true;
+    }
+    if (order.getUser().getUsername() != null && user.getUsername() != null
+        && order.getUser().getUsername().equalsIgnoreCase(user.getUsername())) {
+      return true;
+    }
+    return false;
   }
 
 }
