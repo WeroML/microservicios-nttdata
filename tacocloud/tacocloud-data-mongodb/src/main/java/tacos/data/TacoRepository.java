@@ -13,4 +13,6 @@ public interface TacoRepository
   Flux<Taco> findByAvailableTrue();
   Flux<Taco> findByAvailableTrueAndStockGreaterThan(int stock);
 
+  // Ejercicio 19: Buscar, filtrar, ordenar y paginar tacos
+  Flux<Taco> findByNameContainingIgnoreCase(String name);
 }
