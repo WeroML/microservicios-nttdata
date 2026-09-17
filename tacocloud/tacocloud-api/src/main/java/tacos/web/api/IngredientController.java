@@ -39,19 +39,39 @@ public class IngredientController {
   }
 
   // Ejercicio 13: Catálogo con precio, disponibilidad y stock
+  // Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
   @GetMapping
   public Flux<Ingredient> allIngredients(
       @RequestParam(name = "available", required = false) Boolean available,
-      @RequestParam(name = "inStock", required = false) Boolean inStock) {
+      @RequestParam(name = "inStock", required = false) Boolean inStock,
+      @RequestParam(name = "dietary", required = false) tacos.DietaryLabel dietary,
+      @RequestParam(name = "excludeAllergen", required = false) tacos.Allergen excludeAllergen,
+      @RequestParam(name = "maxSpice", required = false) tacos.SpiceLevel maxSpice) {
+    Flux<Ingredient> flux;
     if (Boolean.TRUE.equals(available) && Boolean.TRUE.equals(inStock)) {
-      return repo.findByAvailableTrueAndStockGreaterThan(0);
+      flux = repo.findByAvailableTrueAndStockGreaterThan(0);
     } else if (Boolean.TRUE.equals(available)) {
-      return repo.findByAvailableTrue();
+      flux = repo.findByAvailableTrue();
+    } else {
+      flux = repo.findAll();
     }
-    return repo.findAll();
+
+    return flux.filter(ing -> {
+      if (dietary != null && !ing.hasDietaryLabel(dietary)) {
+        return false;
+      }
+      if (excludeAllergen != null && ing.hasAllergen(excludeAllergen)) {
+        return false;
+      }
+      if (maxSpice != null && ing.getSpiceLevel() != null && ing.getSpiceLevel().getLevel() > maxSpice.getLevel()) {
+        return false;
+      }
+      return true;
+    });
   }
 
   // Ejercicio 13: Catálogo con precio, disponibilidad y stock
+  // Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
   @PatchMapping(path = "/{id}", consumes = "application/json")
   public Mono<ResponseEntity<Ingredient>> patchIngredient(@PathVariable String id, @RequestBody Ingredient patch) {
     return repo.findById(id)
@@ -70,6 +90,15 @@ public class IngredientController {
           }
           if (patch.getStock() != null) {
             ingredient.setStock(patch.getStock());
+          }
+          if (patch.getDietaryLabels() != null) {
+            ingredient.setDietaryLabels(patch.getDietaryLabels());
+          }
+          if (patch.getAllergens() != null) {
+            ingredient.setAllergens(patch.getAllergens());
+          }
+          if (patch.getSpiceLevel() != null) {
+            ingredient.setSpiceLevel(patch.getSpiceLevel());
           }
           return repo.save(ingredient);
         })

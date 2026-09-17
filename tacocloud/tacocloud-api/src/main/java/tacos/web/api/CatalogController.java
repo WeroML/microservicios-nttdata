@@ -19,6 +19,7 @@ import tacos.data.IngredientRepository;
 import tacos.data.TacoRepository;
 
 // Ejercicio 13: Catálogo con precio, disponibilidad y stock
+// Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
 @RestController
 @RequestMapping(path = "/api/catalog", produces = "application/json")
 @CrossOrigin(origins = "http://localhost:8080")
@@ -34,14 +35,20 @@ public class CatalogController {
 
   @GetMapping
   public Mono<CatalogResponse> getCatalog(
-      @RequestParam(name = "onlyAvailable", required = false, defaultValue = "false") boolean onlyAvailable) {
-    Flux<Ingredient> ingredientsFlux = onlyAvailable
+      @RequestParam(name = "onlyAvailable", required = false, defaultValue = "false") boolean onlyAvailable,
+      @RequestParam(name = "dietary", required = false) tacos.DietaryLabel dietary,
+      @RequestParam(name = "excludeAllergen", required = false) tacos.Allergen excludeAllergen,
+      @RequestParam(name = "maxSpice", required = false) tacos.SpiceLevel maxSpice) {
+    Flux<Ingredient> ingredientsFlux = (onlyAvailable
         ? ingredientRepo.findByAvailableTrueAndStockGreaterThan(0)
-        : ingredientRepo.findAll();
+        : ingredientRepo.findAll())
+        .filter(ing -> filterIngredient(ing, dietary, excludeAllergen, maxSpice));
 
-    Flux<Taco> tacosFlux = onlyAvailable
+    Flux<Taco> tacosFlux = (onlyAvailable
         ? tacoRepo.findByAvailableTrue()
-        : tacoRepo.findAll();
+        : tacoRepo.findAll())
+        .doOnNext(Taco::updateDietaryAndAllergenInfo)
+        .filter(taco -> filterTaco(taco, dietary, excludeAllergen, maxSpice));
 
     return Mono.zip(
         ingredientsFlux.collectList(),
@@ -52,16 +59,54 @@ public class CatalogController {
 
   @GetMapping("/ingredients")
   public Flux<Ingredient> getIngredientsCatalog(
-      @RequestParam(name = "onlyAvailable", required = false, defaultValue = "false") boolean onlyAvailable) {
-    if (onlyAvailable) {
-      return ingredientRepo.findByAvailableTrueAndStockGreaterThan(0);
-    }
-    return ingredientRepo.findAll();
+      @RequestParam(name = "onlyAvailable", required = false, defaultValue = "false") boolean onlyAvailable,
+      @RequestParam(name = "dietary", required = false) tacos.DietaryLabel dietary,
+      @RequestParam(name = "excludeAllergen", required = false) tacos.Allergen excludeAllergen,
+      @RequestParam(name = "maxSpice", required = false) tacos.SpiceLevel maxSpice) {
+    Flux<Ingredient> flux = onlyAvailable
+        ? ingredientRepo.findByAvailableTrueAndStockGreaterThan(0)
+        : ingredientRepo.findAll();
+    return flux.filter(ing -> filterIngredient(ing, dietary, excludeAllergen, maxSpice));
   }
 
   @GetMapping("/tacos")
-  public Flux<Taco> getTacosCatalog() {
-    return tacoRepo.findAll();
+  public Flux<Taco> getTacosCatalog(
+      @RequestParam(name = "onlyAvailable", required = false, defaultValue = "false") boolean onlyAvailable,
+      @RequestParam(name = "dietary", required = false) tacos.DietaryLabel dietary,
+      @RequestParam(name = "excludeAllergen", required = false) tacos.Allergen excludeAllergen,
+      @RequestParam(name = "maxSpice", required = false) tacos.SpiceLevel maxSpice) {
+    Flux<Taco> flux = onlyAvailable
+        ? tacoRepo.findByAvailableTrue()
+        : tacoRepo.findAll();
+    return flux
+        .doOnNext(Taco::updateDietaryAndAllergenInfo)
+        .filter(taco -> filterTaco(taco, dietary, excludeAllergen, maxSpice));
+  }
+
+  private boolean filterIngredient(Ingredient ing, tacos.DietaryLabel dietary, tacos.Allergen excludeAllergen, tacos.SpiceLevel maxSpice) {
+    if (dietary != null && !ing.hasDietaryLabel(dietary)) {
+      return false;
+    }
+    if (excludeAllergen != null && ing.hasAllergen(excludeAllergen)) {
+      return false;
+    }
+    if (maxSpice != null && ing.getSpiceLevel() != null && ing.getSpiceLevel().getLevel() > maxSpice.getLevel()) {
+      return false;
+    }
+    return true;
+  }
+
+  private boolean filterTaco(Taco taco, tacos.DietaryLabel dietary, tacos.Allergen excludeAllergen, tacos.SpiceLevel maxSpice) {
+    if (dietary != null && !taco.hasDietaryLabel(dietary)) {
+      return false;
+    }
+    if (excludeAllergen != null && taco.hasAllergen(excludeAllergen)) {
+      return false;
+    }
+    if (maxSpice != null && taco.computeSpiceLevel().getLevel() > maxSpice.getLevel()) {
+      return false;
+    }
+    return true;
   }
 
   @Data

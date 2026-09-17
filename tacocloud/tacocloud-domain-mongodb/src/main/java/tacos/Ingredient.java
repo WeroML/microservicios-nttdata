@@ -25,6 +25,11 @@ public class Ingredient {
   private Boolean available;
   private Integer stock;
 
+  // Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
+  private java.util.Set<DietaryLabel> dietaryLabels = new java.util.HashSet<>();
+  private java.util.Set<Allergen> allergens = new java.util.HashSet<>();
+  private SpiceLevel spiceLevel = SpiceLevel.NONE;
+
   public enum Type {
     WRAP, PROTEIN, VEGGIES, CHEESE, SAUCE
   }
@@ -44,6 +49,39 @@ public class Ingredient {
 
   public Ingredient(String id, String name, Type type, double price, boolean available, int stock) {
     this(id, name, type, BigDecimal.valueOf(price), available, stock);
+  }
+
+  // Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
+  public Ingredient(String id, String name, Type type, BigDecimal price, Boolean available, Integer stock,
+                    java.util.Set<DietaryLabel> dietaryLabels, java.util.Set<Allergen> allergens, SpiceLevel spiceLevel) {
+    this(id, name, type, price, available, stock);
+    if (dietaryLabels != null) {
+      this.dietaryLabels = new java.util.HashSet<>(dietaryLabels);
+    }
+    if (allergens != null) {
+      this.allergens = new java.util.HashSet<>(allergens);
+    }
+    this.spiceLevel = spiceLevel != null ? spiceLevel : SpiceLevel.NONE;
+  }
+
+  public boolean hasDietaryLabel(DietaryLabel label) {
+    return this.dietaryLabels != null && this.dietaryLabels.contains(label);
+  }
+
+  public boolean hasAllergen(Allergen allergen) {
+    return this.allergens != null && this.allergens.contains(allergen);
+  }
+
+  public boolean containsAnyAllergen(java.util.Collection<Allergen> targetAllergens) {
+    if (this.allergens == null || targetAllergens == null) {
+      return false;
+    }
+    for (Allergen a : targetAllergens) {
+      if (this.allergens.contains(a)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public boolean isAvailable() {

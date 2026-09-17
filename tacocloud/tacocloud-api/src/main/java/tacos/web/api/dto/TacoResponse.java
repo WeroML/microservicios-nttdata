@@ -32,6 +32,16 @@ public class TacoResponse {
   // Ejercicio 14: Calcular precios y cantidades del lado servidor
   private Integer quantity;
 
+  // Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
+  private java.util.Set<tacos.DietaryLabel> dietaryLabels;
+  private java.util.Set<tacos.Allergen> allergens;
+  private tacos.SpiceLevel spiceLevel;
+
+  public TacoResponse(String id, String name, Date createdAt, List<Ingredient> ingredients,
+                      java.math.BigDecimal price, Boolean available, Integer stock, Integer quantity) {
+    this(id, name, createdAt, ingredients, price, available, stock, quantity, null, null, null);
+  }
+
   /**
    * Mapeo de la entidad de persistencia al DTO de respuesta.
    */
@@ -39,6 +49,10 @@ public class TacoResponse {
     if (taco == null) {
       return null;
     }
+    java.util.Set<tacos.DietaryLabel> labels = taco.computeDietaryLabels();
+    java.util.Set<tacos.Allergen> allergens = taco.computeAllergens();
+    tacos.SpiceLevel spice = taco.computeSpiceLevel();
+
     return new TacoResponse(
         taco.getId(),
         taco.getName(),
@@ -47,7 +61,10 @@ public class TacoResponse {
         taco.getPrice(),
         taco.getAvailable(),
         taco.getStock(),
-        taco.getQuantity()
+        taco.getQuantity(),
+        labels,
+        allergens,
+        spice
     );
   }
 }

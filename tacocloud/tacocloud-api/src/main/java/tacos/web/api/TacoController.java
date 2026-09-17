@@ -36,6 +36,28 @@ public class TacoController {
         .map(TacoResponse::fromEntity);
   }
 
+  // Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
+  @GetMapping
+  public Flux<TacoResponse> allTacos(
+      @RequestParam(name = "dietary", required = false) tacos.DietaryLabel dietary,
+      @RequestParam(name = "excludeAllergen", required = false) tacos.Allergen excludeAllergen,
+      @RequestParam(name = "maxSpice", required = false) tacos.SpiceLevel maxSpice) {
+    return tacoRepo.findAll()
+        .filter(taco -> {
+          if (dietary != null && !taco.hasDietaryLabel(dietary)) {
+            return false;
+          }
+          if (excludeAllergen != null && taco.hasAllergen(excludeAllergen)) {
+            return false;
+          }
+          if (maxSpice != null && taco.computeSpiceLevel().getLevel() > maxSpice.getLevel()) {
+            return false;
+          }
+          return true;
+        })
+        .map(TacoResponse::fromEntity);
+  }
+
   // Ejercicio 8: Separar DTOs de entrada, respuesta y persistencia
   @PostMapping(consumes = "application/json")
   @ResponseStatus(HttpStatus.CREATED)
