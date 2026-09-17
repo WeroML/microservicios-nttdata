@@ -42,11 +42,13 @@ public class OrderApiController {
   private CouponEngine couponEngine;
   // Ejercicio 16: Reservar y liberar inventario sin vender aire
   private InventoryService inventoryService;
+  // Ejercicio 18: Taco Physics: reglas componibles de diseño
+  private TacoPhysicsEngine physicsEngine;
 
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
                             EmailOrderService emailOrderService) {
-    this(repo, orderMessages, emailOrderService, null, null, null, null);
+    this(repo, orderMessages, emailOrderService, null, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -54,7 +56,7 @@ public class OrderApiController {
                             EmailOrderService emailOrderService,
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -63,7 +65,17 @@ public class OrderApiController {
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null, null);
+  }
+
+  public OrderApiController(OrderRepository repo,
+                            OrderMessagingService orderMessages,
+                            EmailOrderService emailOrderService,
+                            IngredientRepository ingredientRepo,
+                            TacoRepository tacoRepo,
+                            CouponEngine couponEngine,
+                            InventoryService inventoryService) {
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, null);
   }
 
   @Autowired
@@ -73,7 +85,8 @@ public class OrderApiController {
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine,
-                            InventoryService inventoryService) {
+                            InventoryService inventoryService,
+                            TacoPhysicsEngine physicsEngine) {
     this.repo = repo;
     this.orderMessages = orderMessages;
     this.emailOrderService = emailOrderService;
@@ -81,6 +94,7 @@ public class OrderApiController {
     this.tacoRepo = tacoRepo;
     this.couponEngine = couponEngine;
     this.inventoryService = inventoryService;
+    this.physicsEngine = physicsEngine;
   }
 
   @GetMapping(produces="application/json")
@@ -98,10 +112,12 @@ public class OrderApiController {
 
   // Ejercicio 14: Calcular precios y cantidades del lado servidor
   // Ejercicio 16: Reservar y liberar inventario sin vender aire
+  // Ejercicio 18: Taco Physics: reglas componibles de diseño
   @PostMapping(consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrder(@RequestBody TacoOrder order) {
-    return calculateOrderPrices(order)
+    return validateTacoPhysics(order)
+        .flatMap(this::calculateOrderPrices)
         .flatMap(ord -> {
           if (inventoryService != null) {
             return inventoryService.reserveInventory(ord);
@@ -110,6 +126,16 @@ public class OrderApiController {
         })
         .flatMap(repo::save)
         .doOnNext(orderMessages::sendOrder);
+  }
+
+  // Ejercicio 18: Taco Physics: reglas componibles de diseño
+  private Mono<TacoOrder> validateTacoPhysics(TacoOrder order) {
+    if (physicsEngine == null || order == null || order.getTacos() == null || order.getTacos().isEmpty()) {
+      return Mono.justOrEmpty(order);
+    }
+    return Flux.fromIterable(order.getTacos())
+        .flatMap(physicsEngine::validateAndPass)
+        .then(Mono.just(order));
   }
 
   // Ejercicio 14: Calcular precios y cantidades del lado servidor
@@ -199,6 +225,7 @@ public class OrderApiController {
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrderFromEmail(@RequestBody Mono<EmailOrder> emailOrder) {
     return emailOrderService.convertEmailOrderToDomainOrder(emailOrder)
+        .flatMap(this::validateTacoPhysics)
         .flatMap(this::calculateOrderPrices)
         .flatMap(ord -> {
           if (inventoryService != null) {

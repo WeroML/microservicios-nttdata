@@ -175,4 +175,16 @@ public class Taco {
   public boolean hasDietaryLabel(DietaryLabel label) {
     return computeDietaryLabels().contains(label);
   }
+
+  // Ejercicio 18: Taco Physics: reglas componibles de diseño
+  public tacos.physics.PhysicsResult validatePhysics() {
+    return validatePhysics(tacos.physics.TacoPhysicsRules.standard());
+  }
+
+  public tacos.physics.PhysicsResult validatePhysics(tacos.physics.TacoPhysicsRule rule) {
+    if (rule == null) {
+      return tacos.physics.PhysicsResult.valid();
+    }
+    return rule.validate(this);
+  }
 }

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,9 +25,17 @@ import tacos.web.api.dto.TacoResponse;
 @CrossOrigin(origins="http://localhost:8080")
 public class TacoController {
   private TacoRepository tacoRepo;
+  // Ejercicio 18: Taco Physics: reglas componibles de diseño
+  private TacoPhysicsEngine physicsEngine;
 
   public TacoController(TacoRepository tacoRepo) {
+    this(tacoRepo, null);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public TacoController(TacoRepository tacoRepo, TacoPhysicsEngine physicsEngine) {
     this.tacoRepo = tacoRepo;
+    this.physicsEngine = physicsEngine;
   }
 
   @GetMapping(params="recent")
@@ -59,12 +68,28 @@ public class TacoController {
   }
 
   // Ejercicio 8: Separar DTOs de entrada, respuesta y persistencia
+  // Ejercicio 18: Taco Physics: reglas componibles de diseño
   @PostMapping(consumes = "application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoResponse> postTaco(@Valid @RequestBody TacoRequest request) {
     Taco taco = request.toEntity();
-    return tacoRepo.save(taco)
+    Mono<Taco> validatedTaco = physicsEngine != null 
+        ? physicsEngine.validateAndPass(taco) 
+        : Mono.just(taco);
+
+    return validatedTaco
+        .flatMap(tacoRepo::save)
         .map(TacoResponse::fromEntity);
+  }
+
+  // Ejercicio 18: Taco Physics: reglas componibles de diseño
+  @PostMapping(path = "/validate-physics", consumes = "application/json")
+  public Mono<tacos.physics.PhysicsResult> validatePhysics(@RequestBody TacoRequest request) {
+    Taco taco = request.toEntity();
+    if (physicsEngine != null) {
+      return physicsEngine.evaluate(taco);
+    }
+    return Mono.just(taco.validatePhysics());
   }
 
   @GetMapping("/{id}")
