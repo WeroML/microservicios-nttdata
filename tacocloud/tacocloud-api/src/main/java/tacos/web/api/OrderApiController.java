@@ -32,9 +32,15 @@ import tacos.data.IngredientRepository;
 import tacos.data.OrderRepository;
 import tacos.data.TacoRepository;
 import tacos.data.UserRepository;
+import javax.validation.Valid;
+
+import tacos.TacoOrder.OrderStatus;
 import tacos.messaging.OrderMessagingService;
+import tacos.web.api.dto.OrderResponse;
+import tacos.web.api.dto.OrderStatusResponse;
 import tacos.web.api.dto.PagedResponse;
 import tacos.web.api.dto.ReorderRequest;
+import tacos.web.api.dto.UpdateOrderStatusRequest;
 
 @RestController
 @RequestMapping(path="/api/orders",
@@ -170,6 +176,112 @@ public class OrderApiController {
                     "Acceso denegado: No está autorizado para consultar la orden de otro usuario."));
               }
               return Mono.just(order);
+            }));
+  }
+
+  // Ejercicio 25: Flujo de estados de una orden
+  // Ejercicio 8: Separar DTOs de entrada, respuesta y persistencia
+  @GetMapping(path = "/{orderId}/details", produces = "application/json")
+  public Mono<OrderResponse> getOrderDetails(@PathVariable("orderId") String orderId, Principal principal) {
+    return resolveAuthenticatedUser(principal)
+        .flatMap(user -> repo.findById(orderId)
+            .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Orden no encontrada: " + orderId)))
+            .flatMap(order -> {
+              boolean admin = isUserAdmin(principal);
+              if (!admin && !isOrderOwnedByUser(order, user)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Acceso denegado: No está autorizado para consultar la orden de otro usuario."));
+              }
+              return Mono.just(OrderResponse.fromEntity(order));
+            }));
+  }
+
+  // Ejercicio 25: Flujo de estados de una orden
+  // Ejercicio 8: Separar DTOs de entrada, respuesta y persistencia
+  @GetMapping(path = "/{orderId}/status", produces = "application/json")
+  public Mono<OrderStatusResponse> getOrderStatus(@PathVariable("orderId") String orderId, Principal principal) {
+    return resolveAuthenticatedUser(principal)
+        .flatMap(user -> repo.findById(orderId)
+            .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Orden no encontrada: " + orderId)))
+            .flatMap(order -> {
+              boolean admin = isUserAdmin(principal);
+              if (!admin && !isOrderOwnedByUser(order, user)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Acceso denegado: No está autorizado para consultar el estado de esta orden."));
+              }
+              OrderStatus current = order.getStatus() != null ? order.getStatus() : OrderStatus.CONFIRMED;
+              return Mono.just(OrderStatusResponse.builder()
+                  .orderId(order.getId())
+                  .currentStatus(current)
+                  .updatedAt(new Date())
+                  .allowedNextStates(current.allowedNextStates())
+                  .terminal(current.isTerminal())
+                  .build());
+            }));
+  }
+
+  // Ejercicio 25: Flujo de estados de una orden
+  // Ejercicio 8: Separar DTOs de entrada, respuesta y persistencia
+  // Ejercicio 9: Validación y errores tipo Problem Details
+  // Ejercicio 11: Autorización deny-by-default y roles útiles
+  @PatchMapping(path = "/{orderId}/status", consumes = "application/json", produces = "application/json")
+  public Mono<OrderStatusResponse> updateOrderStatus(
+      @PathVariable("orderId") String orderId,
+      @Valid @RequestBody UpdateOrderStatusRequest request,
+      Principal principal) {
+    return resolveAuthenticatedUser(principal)
+        .flatMap(user -> repo.findById(orderId)
+            .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Orden no encontrada: " + orderId)))
+            .flatMap(order -> {
+              boolean admin = isUserAdmin(principal);
+              OrderStatus current = order.getStatus() != null ? order.getStatus() : OrderStatus.CONFIRMED;
+              OrderStatus target = request.getStatus();
+
+              // Autorización Deny-By-Default y Roles Útiles (Ejercicio 11)
+              if (!admin) {
+                // Cliente común (ROLE_USER): solo puede gestionar sus propias órdenes (IDOR)
+                if (!isOrderOwnedByUser(order, user)) {
+                  return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+                      "Acceso denegado: No está autorizado para modificar la orden de otro usuario."));
+                }
+                // Un cliente únicamente tiene permitido solicitar CANCELLED
+                if (target != OrderStatus.CANCELLED) {
+                  return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN,
+                      "Acceso denegado: Solo el personal de cocina o administradores (ROLE_ADMIN) pueden avanzar el estado operativo de la orden a " + target + "."));
+                }
+                // Cancelación permitida solo en etapas iniciales (PENDING o CONFIRMED)
+                if (current != OrderStatus.PENDING && current != OrderStatus.CONFIRMED) {
+                  return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                      "No es posible cancelar la orden: la orden ya se encuentra en proceso de " + current + ". Por favor contacte a soporte."));
+                }
+              }
+
+              // Validación de la Máquina de Estados (RFC 7807 Problem Details - Ejercicio 9)
+              if (!current.canTransitionTo(target)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Transición de estado inválida: No es posible cambiar la orden de '" + current + "' a '" + target +
+                    "'. Estados siguientes permitidos: " + current.allowedNextStates() + "."));
+              }
+
+              // Aplicar transición
+              order.setStatus(target);
+
+              // Liberar inventario si transiciona a CANCELLED
+              Mono<Void> releaseInventoryMono = (target == OrderStatus.CANCELLED && inventoryService != null)
+                  ? inventoryService.releaseInventory(order)
+                  : Mono.empty();
+
+              return releaseInventoryMono
+                  .then(repo.save(order))
+                  .map(savedOrder -> OrderStatusResponse.builder()
+                      .orderId(savedOrder.getId())
+                      .previousStatus(current)
+                      .currentStatus(savedOrder.getStatus())
+                      .reason(request.getReason())
+                      .updatedAt(new Date())
+                      .allowedNextStates(savedOrder.getStatus().allowedNextStates())
+                      .terminal(savedOrder.getStatus().isTerminal())
+                      .build());
             }));
   }
 
@@ -567,6 +679,23 @@ public class OrderApiController {
       return true;
     }
     return false;
+  }
+
+  private boolean isUserAdmin(Principal principal) {
+    if (principal == null) {
+      return false;
+    }
+    if (principal instanceof Authentication) {
+      Authentication auth = (Authentication) principal;
+      if (auth.getAuthorities() != null) {
+        for (org.springframework.security.core.GrantedAuthority ga : auth.getAuthorities()) {
+          if ("ROLE_ADMIN".equalsIgnoreCase(ga.getAuthority()) || "ADMIN".equalsIgnoreCase(ga.getAuthority())) {
+            return true;
+          }
+        }
+      }
+    }
+    return "admin".equalsIgnoreCase(principal.getName().trim());
   }
 
 }

@@ -78,10 +78,51 @@ public class TacoOrder implements Serializable {
   }
 
   // Ejercicio 16: Reservar y liberar inventario sin vender aire
+  // Ejercicio 25: Flujo de estados de una orden
   public enum OrderStatus {
     PENDING,
     CONFIRMED,
-    CANCELLED
+    PREPARING,
+    READY,
+    DELIVERING,
+    DELIVERED,
+    CANCELLED;
+
+    public boolean canTransitionTo(OrderStatus next) {
+      if (next == null) {
+        return false;
+      }
+      switch (this) {
+        case PENDING:
+          return next == CONFIRMED || next == CANCELLED;
+        case CONFIRMED:
+          return next == PREPARING || next == CANCELLED;
+        case PREPARING:
+          return next == READY || next == CANCELLED;
+        case READY:
+          return next == DELIVERING || next == CANCELLED;
+        case DELIVERING:
+          return next == DELIVERED || next == CANCELLED;
+        case DELIVERED:
+        case CANCELLED:
+        default:
+          return false;
+      }
+    }
+
+    public java.util.Set<OrderStatus> allowedNextStates() {
+      java.util.Set<OrderStatus> set = new java.util.LinkedHashSet<>();
+      for (OrderStatus target : OrderStatus.values()) {
+        if (canTransitionTo(target)) {
+          set.add(target);
+        }
+      }
+      return set;
+    }
+
+    public boolean isTerminal() {
+      return this == DELIVERED || this == CANCELLED;
+    }
   }
   private OrderStatus status = OrderStatus.CONFIRMED;
 

@@ -43,8 +43,9 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         .antMatchers(HttpMethod.PATCH, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
         .antMatchers(HttpMethod.DELETE, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
         
-        // Roles útiles: Creación y gestión de órdenes y tacos requiere ROLE_USER
-        .antMatchers("/api/orders/**").hasRole("USER")
+        // Roles útiles: Creación y gestión de órdenes (USER y ADMIN para cocina y estados)
+        // Ejercicio 25: Flujo de estados de una orden
+        .antMatchers("/api/orders/**").hasAnyRole("USER", "ADMIN")
         .antMatchers(HttpMethod.POST, "/api/tacos/**").hasRole("USER")
         // Ejercicio 21: Favoritos por usuario sin confiar en userId del cliente
         .antMatchers("/api/favorites/**").hasRole("USER")
