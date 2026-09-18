@@ -10,24 +10,40 @@ import lombok.extern.slf4j.Slf4j;
 import tacos.TacoOrder;
 import tacos.kitchen.KitchenUI;
 
+// Ejercicio 30: Consumidor idempotente, retry limitado y DLQ
 @Profile("kafka-listener")
 @Component
 @Slf4j
 public class OrderListener {
   
-  private KitchenUI ui;
+  private final KitchenUI ui;
+  private final tacos.kitchen.consumer.IdempotentOrderConsumerEngine consumerEngine;
 
   @Autowired
-  public OrderListener(KitchenUI ui) {
+  public OrderListener(
+      KitchenUI ui,
+      @Autowired(required = false) tacos.kitchen.consumer.IdempotentOrderConsumerEngine consumerEngine) {
     this.ui = ui;
+    this.consumerEngine = consumerEngine;
+  }
+
+  public OrderListener(KitchenUI ui) {
+    this(ui, null);
   }
 
   @KafkaListener(topics="tacocloud.orders.topic")
   public void handle(TacoOrder order, ConsumerRecord<String, TacoOrder> record) {
-    log.error("Received from partition {} with timestamp {}",
-        record.partition(), record.timestamp());
+    if (record != null) {
+      log.info("// Ejercicio 30: Received from partition {} with timestamp {}",
+          record.partition(), record.timestamp());
+    }
     
-    ui.displayOrder(order);
+    String key = record != null && record.key() != null ? record.key() : (order != null ? order.getId() : null);
+    if (consumerEngine != null) {
+      consumerEngine.consumeOrder(order, "KAFKA", key);
+    } else if (ui != null) {
+      ui.displayOrder(order);
+    }
   }
   
 }
