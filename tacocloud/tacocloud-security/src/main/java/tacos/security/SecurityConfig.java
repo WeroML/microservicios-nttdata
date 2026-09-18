@@ -55,6 +55,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         .antMatchers("/api/kitchen/**").hasRole("ADMIN")
         // Ejercicio 28: Elegir broker en runtime, no editando el POM
         .antMatchers("/api/messaging/**").hasRole("ADMIN")
+        // Ejercicio 29: Outbox transaccional para no perder órdenes
+        .antMatchers("/api/outbox/**").hasRole("ADMIN")
         
         // Principio DENY-BY-DEFAULT: Cualquier otra ruta exige autenticación
         .anyRequest().authenticated()

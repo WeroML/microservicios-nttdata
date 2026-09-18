@@ -26,20 +26,40 @@ import tacos.web.api.dto.OrderEtaResponse;
 
 // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
 // Ejercicio 27: Contrato único de eventos de orden
+// Ejercicio 29: Outbox transaccional para no perder órdenes
 @Service
 public class KitchenService {
 
   private final OrderRepository repo;
   private final OrderMessagingService orderMessages;
+  private final tacos.outbox.TransactionalOutboxService outboxService;
 
   public KitchenService(OrderRepository repo) {
-    this(repo, null);
+    this(repo, null, null);
+  }
+
+  public KitchenService(OrderRepository repo, OrderMessagingService orderMessages) {
+    this(repo, orderMessages, null);
   }
 
   @Autowired
-  public KitchenService(OrderRepository repo, @Autowired(required = false) OrderMessagingService orderMessages) {
+  public KitchenService(
+      OrderRepository repo,
+      @Autowired(required = false) OrderMessagingService orderMessages,
+      @Autowired(required = false) tacos.outbox.TransactionalOutboxService outboxService) {
     this.repo = repo;
     this.orderMessages = orderMessages;
+    this.outboxService = outboxService;
+  }
+
+  private Mono<?> dispatchEvent(OrderEvent event) {
+    if (outboxService != null) {
+      return outboxService.enqueueEvent(event);
+    } else if (orderMessages != null) {
+      orderMessages.sendOrderEvent(event);
+      return Mono.empty();
+    }
+    return Mono.empty();
   }
 
   /**
@@ -136,11 +156,10 @@ public class KitchenService {
           order.setEstimatedReadyAt(readyAt);
 
           return repo.save(order)
-              .map(saved -> {
-                if (orderMessages != null) {
-                  orderMessages.sendOrderEvent(OrderEvent.fromOrder(saved, OrderEventType.ORDER_PREPARING));
-                }
-                return toQueueItem(saved, 1, 0, prepMinutes, readyAt, 0L);
+              .flatMap(saved -> {
+                OrderEvent evt = OrderEvent.fromOrder(saved, OrderEventType.ORDER_PREPARING);
+                return dispatchEvent(evt)
+                    .thenReturn(toQueueItem(saved, 1, 0, prepMinutes, readyAt, 0L));
               });
         });
   }
@@ -169,11 +188,10 @@ public class KitchenService {
           order.setClaimedAt(null);
 
           return repo.save(order)
-              .map(saved -> {
-                if (orderMessages != null) {
-                  orderMessages.sendOrderEvent(OrderEvent.fromOrder(saved, OrderEventType.ORDER_CONFIRMED));
-                }
-                return toQueueItem(saved, 1, 0, saved.getEstimatedPrepMinutes() != null ? saved.getEstimatedPrepMinutes() : 5, null, 0L);
+              .flatMap(saved -> {
+                OrderEvent evt = OrderEvent.fromOrder(saved, OrderEventType.ORDER_CONFIRMED);
+                return dispatchEvent(evt)
+                    .thenReturn(toQueueItem(saved, 1, 0, saved.getEstimatedPrepMinutes() != null ? saved.getEstimatedPrepMinutes() : 5, null, 0L));
               });
         });
   }
