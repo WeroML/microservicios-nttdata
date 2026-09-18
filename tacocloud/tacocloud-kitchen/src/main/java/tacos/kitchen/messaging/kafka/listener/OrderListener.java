@@ -39,8 +39,23 @@ public class OrderListener {
     }
     
     String key = record != null && record.key() != null ? record.key() : (order != null ? order.getId() : null);
+    String correlationId = null;
+    if (record != null && record.headers() != null) {
+      org.apache.kafka.common.header.Header h = record.headers().lastHeader("X_CORRELATION_ID");
+      if (h == null) {
+        h = record.headers().lastHeader("X-Correlation-ID");
+      }
+      if (h != null && h.value() != null) {
+        correlationId = new String(h.value(), java.nio.charset.StandardCharsets.UTF_8);
+      }
+    }
+    if (correlationId == null && order != null) {
+      correlationId = order.getCorrelationId();
+    }
+
     if (consumerEngine != null) {
-      consumerEngine.consumeOrder(order, "KAFKA", key);
+      // Ejercicio 31: Correlation ID de HTTP a evento y logs
+      consumerEngine.consumeOrder(order, "KAFKA", key, correlationId);
     } else if (ui != null) {
       ui.displayOrder(order);
     }

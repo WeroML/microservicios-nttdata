@@ -30,6 +30,7 @@ public class RabbitOrderMessagingService
     this.rabbit = rabbit;
   }
   
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @Override
   public void sendOrder(TacoOrder order) {
     if (rabbit != null) {
@@ -40,6 +41,11 @@ public class RabbitOrderMessagingService
                 throws AmqpException {
               MessageProperties props = message.getMessageProperties();
               props.setHeader("X_ORDER_SOURCE", "WEB");
+              if (order != null && order.getCorrelationId() != null) {
+                props.setHeader("X_CORRELATION_ID", order.getCorrelationId());
+                props.setCorrelationId(order.getCorrelationId());
+                log.info("// Ejercicio 31: [RABBITMQ] Enviando orden {} con correlationId={}", order.getId(), order.getCorrelationId());
+              }
               return message;
             } 
           });
@@ -48,6 +54,7 @@ public class RabbitOrderMessagingService
     }
   }
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @Override
   public void sendOrderEvent(OrderEvent event) {
     if (event != null) {
@@ -58,6 +65,11 @@ public class RabbitOrderMessagingService
           props.setHeader("X_EVENT_TYPE", event.getEventType() != null ? event.getEventType().name() : "UNKNOWN");
           props.setHeader("X_EVENT_VERSION", event.getVersion());
           props.setHeader("X_ORDER_SOURCE", event.getSource() != null ? event.getSource() : "WEB");
+          if (event.getCorrelationId() != null) {
+            props.setHeader("X_CORRELATION_ID", event.getCorrelationId());
+            props.setCorrelationId(event.getCorrelationId());
+            log.info("// Ejercicio 31: [RABBITMQ] Enviando evento {} con correlationId={}", event.getEventId(), event.getCorrelationId());
+          }
           return message;
         });
       } else {

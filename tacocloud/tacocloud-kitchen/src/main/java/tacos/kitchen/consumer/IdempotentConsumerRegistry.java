@@ -36,7 +36,12 @@ public class IdempotentConsumerRegistry {
    * Registra el inicio del procesamiento de un mensaje si no ha sido procesado.
    * Retorna true si se puede proceder, o false si ya fue procesado (duplicado).
    */
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   public boolean markProcessing(String key, String broker) {
+    return markProcessing(key, broker, null);
+  }
+
+  public boolean markProcessing(String key, String broker, String correlationId) {
     if (key == null) {
       return true;
     }
@@ -47,11 +52,15 @@ public class IdempotentConsumerRegistry {
       if (existing == null) {
         return ProcessedMessageRecord.builder()
             .messageKey(key)
+            .correlationId(correlationId)
             .broker(broker)
             .status(ProcessStatus.PROCESSING)
             .firstReceivedAt(new Date())
             .attempts(1)
             .build();
+      }
+      if (correlationId != null) {
+        existing.setCorrelationId(correlationId);
       }
       existing.setStatus(ProcessStatus.PROCESSING);
       existing.setAttempts(existing.getAttempts() + 1);
@@ -64,6 +73,11 @@ public class IdempotentConsumerRegistry {
    * Marca el mensaje como procesado exitosamente en el registro de idempotencia.
    */
   public void markSuccess(String key, int attempts) {
+    markSuccess(key, attempts, null);
+  }
+
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  public void markSuccess(String key, int attempts, String correlationId) {
     if (key == null) {
       return;
     }
@@ -72,11 +86,15 @@ public class IdempotentConsumerRegistry {
       if (existing == null) {
         return ProcessedMessageRecord.builder()
             .messageKey(key)
+            .correlationId(correlationId)
             .status(ProcessStatus.PROCESSED)
             .firstReceivedAt(now)
             .processedAt(now)
             .attempts(attempts)
             .build();
+      }
+      if (correlationId != null) {
+        existing.setCorrelationId(correlationId);
       }
       existing.setStatus(ProcessStatus.PROCESSED);
       existing.setProcessedAt(now);
@@ -90,6 +108,11 @@ public class IdempotentConsumerRegistry {
    * Marca el mensaje como fallido y enrutado a DLQ.
    */
   public void markDlq(String key, int attempts, String error) {
+    markDlq(key, attempts, error, null);
+  }
+
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  public void markDlq(String key, int attempts, String error, String correlationId) {
     if (key == null) {
       return;
     }
@@ -97,11 +120,15 @@ public class IdempotentConsumerRegistry {
       if (existing == null) {
         return ProcessedMessageRecord.builder()
             .messageKey(key)
+            .correlationId(correlationId)
             .status(ProcessStatus.FAILED_DLQ)
             .firstReceivedAt(new Date())
             .attempts(attempts)
             .lastError(error)
             .build();
+      }
+      if (correlationId != null) {
+        existing.setCorrelationId(correlationId);
       }
       existing.setStatus(ProcessStatus.FAILED_DLQ);
       existing.setAttempts(attempts);

@@ -57,51 +57,69 @@ public class OrderOutboxService implements TransactionalOutboxService {
     this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
   }
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @Override
   public Mono<OutboxMessage> enqueueOrder(TacoOrder order, OrderEventType eventType) {
-    OrderEventType effectiveType = eventType != null ? eventType : OrderEventType.ORDER_CREATED;
-    OrderEvent event = OrderEvent.fromOrder(order, effectiveType);
-    return enqueueEvent(event);
+    return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
+        .flatMap(cid -> {
+          OrderEventType effectiveType = eventType != null ? eventType : OrderEventType.ORDER_CREATED;
+          if (order != null && order.getCorrelationId() == null) {
+            order.setCorrelationId(cid);
+          }
+          String effectiveCid = (order != null && order.getCorrelationId() != null) ? order.getCorrelationId() : cid;
+          OrderEvent event = OrderEvent.fromOrder(order, effectiveType, OrderEvent.DEFAULT_SOURCE, effectiveCid);
+          return enqueueEvent(event);
+        });
   }
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @Override
   public Mono<OutboxMessage> enqueueEvent(OrderEvent event) {
     if (event == null) {
       return Mono.error(new IllegalArgumentException("OrderEvent no puede ser nulo"));
     }
 
-    String payloadJson = null;
-    try {
-      payloadJson = objectMapper.writeValueAsString(event);
-    } catch (Exception ex) {
-      log.warn("// Ejercicio 29: No fue posible serializar payloadJson del evento {}: {}", event.getEventId(), ex.getMessage());
-    }
-
-    String activeBroker = resolveActiveBrokerName();
-
-    OutboxMessage message = OutboxMessage.builder()
-        .eventId(event.getEventId())
-        .orderId(event.getOrderId())
-        .eventType(event.getEventType())
-        .event(event)
-        .payloadJson(payloadJson)
-        .status(OutboxStatus.PENDING)
-        .createdAt(new Date())
-        .retryCount(0)
-        .maxRetries(defaultMaxRetries)
-        .targetBroker(activeBroker)
-        .source(event.getSource())
-        .build();
-
-    log.info("// Ejercicio 29: Registrando mensaje en Outbox atómico: [eventId={}, orderId={}, type={}]",
-        message.getEventId(), message.getOrderId(), message.getEventType());
-
-    return outboxRepo.save(message)
-        .flatMap(saved -> {
-          if (immediateDispatch) {
-            return tryDispatch(saved);
+    return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
+        .flatMap(cid -> {
+          if (event.getCorrelationId() == null || event.getCorrelationId().trim().isEmpty()) {
+            event.setCorrelationId(cid);
           }
-          return Mono.just(saved);
+          String correlationId = event.getCorrelationId();
+
+          String payloadJson = null;
+          try {
+            payloadJson = objectMapper.writeValueAsString(event);
+          } catch (Exception ex) {
+            log.warn("// Ejercicio 29: No fue posible serializar payloadJson del evento {}: {}", event.getEventId(), ex.getMessage());
+          }
+
+          String activeBroker = resolveActiveBrokerName();
+
+          OutboxMessage message = OutboxMessage.builder()
+              .eventId(event.getEventId())
+              .orderId(event.getOrderId())
+              .correlationId(correlationId)
+              .eventType(event.getEventType())
+              .event(event)
+              .payloadJson(payloadJson)
+              .status(OutboxStatus.PENDING)
+              .createdAt(new Date())
+              .retryCount(0)
+              .maxRetries(defaultMaxRetries)
+              .targetBroker(activeBroker)
+              .source(event.getSource())
+              .build();
+
+          log.info("// Ejercicio 31: Registrando mensaje en Outbox atómico: [eventId={}, orderId={}, correlationId={}, type={}]",
+              message.getEventId(), message.getOrderId(), message.getCorrelationId(), message.getEventType());
+
+          return outboxRepo.save(message)
+              .flatMap(saved -> {
+                if (immediateDispatch) {
+                  return tryDispatch(saved);
+                }
+                return Mono.just(saved);
+              });
         });
   }
 
@@ -121,9 +139,12 @@ public class OrderOutboxService implements TransactionalOutboxService {
     }
 
     try {
-      log.info("// Ejercicio 29: Despachando mensaje de outbox [eventId={}] a broker '{}'",
-          message.getEventId(), message.getTargetBroker());
+      log.info("// Ejercicio 31: Despachando mensaje de outbox [eventId={}, correlationId={}] a broker '{}'",
+          message.getEventId(), message.getCorrelationId(), message.getTargetBroker());
 
+      if (message.getEvent() != null && message.getCorrelationId() != null && message.getEvent().getCorrelationId() == null) {
+        message.getEvent().setCorrelationId(message.getCorrelationId());
+      }
       orderMessages.sendOrderEvent(message.getEvent());
 
       // Éxito: marcamos como PUBLISHED

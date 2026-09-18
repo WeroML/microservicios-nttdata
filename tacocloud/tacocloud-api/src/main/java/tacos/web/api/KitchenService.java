@@ -157,9 +157,14 @@ public class KitchenService {
 
           return repo.save(order)
               .flatMap(saved -> {
-                OrderEvent evt = OrderEvent.fromOrder(saved, OrderEventType.ORDER_PREPARING);
-                return dispatchEvent(evt)
-                    .thenReturn(toQueueItem(saved, 1, 0, prepMinutes, readyAt, 0L));
+                // Ejercicio 31: Correlation ID de HTTP a evento y logs
+                return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
+                    .flatMap(cid -> {
+                      saved.setCorrelationId(cid);
+                      OrderEvent evt = OrderEvent.fromOrder(saved, OrderEventType.ORDER_PREPARING, OrderEvent.DEFAULT_SOURCE, cid);
+                      return dispatchEvent(evt)
+                          .thenReturn(toQueueItem(saved, 1, 0, prepMinutes, readyAt, 0L));
+                    });
               });
         });
   }
@@ -189,9 +194,14 @@ public class KitchenService {
 
           return repo.save(order)
               .flatMap(saved -> {
-                OrderEvent evt = OrderEvent.fromOrder(saved, OrderEventType.ORDER_CONFIRMED);
-                return dispatchEvent(evt)
-                    .thenReturn(toQueueItem(saved, 1, 0, saved.getEstimatedPrepMinutes() != null ? saved.getEstimatedPrepMinutes() : 5, null, 0L));
+                // Ejercicio 31: Correlation ID de HTTP a evento y logs
+                return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
+                    .flatMap(cid -> {
+                      saved.setCorrelationId(cid);
+                      OrderEvent evt = OrderEvent.fromOrder(saved, OrderEventType.ORDER_CONFIRMED, OrderEvent.DEFAULT_SOURCE, cid);
+                      return dispatchEvent(evt)
+                          .thenReturn(toQueueItem(saved, 1, 0, saved.getEstimatedPrepMinutes() != null ? saved.getEstimatedPrepMinutes() : 5, null, 0L));
+                    });
               });
         });
   }

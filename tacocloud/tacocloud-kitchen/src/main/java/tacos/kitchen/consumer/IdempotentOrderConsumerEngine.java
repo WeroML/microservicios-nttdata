@@ -52,103 +52,136 @@ public class IdempotentOrderConsumerEngine {
    * Procesa una orden asegurando idempotencia, tolerancia a fallos con reintentos y desvío a DLQ.
    */
   public ConsumeResult consumeOrder(TacoOrder order, String broker, String explicitKey) {
-    String key = resolveKey(order, explicitKey);
+    return consumeOrder(order, broker, explicitKey, null);
+  }
 
-    // 1. Verificación de Idempotencia
-    if (registry.isAlreadyProcessed(key)) {
-      registry.recordDuplicate(key);
-      log.info("// Ejercicio 30: [IDEMPOTENCIA] Orden ya procesada previamente (clave={}). Omitiendo ejecución redundante.", key);
-      return ConsumeResult.duplicateSkipped(key);
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  public ConsumeResult consumeOrder(TacoOrder order, String broker, String explicitKey, String correlationId) {
+    String key = resolveKey(order, explicitKey);
+    String cid = (correlationId != null && !correlationId.trim().isEmpty())
+        ? correlationId.trim()
+        : (order != null && order.getCorrelationId() != null && !order.getCorrelationId().trim().isEmpty()
+            ? order.getCorrelationId().trim()
+            : UUID.randomUUID().toString());
+
+    if (order != null && order.getCorrelationId() == null) {
+      order.setCorrelationId(cid);
     }
 
-    registry.markProcessing(key, broker);
+    org.slf4j.MDC.put("correlationId", cid);
+    try {
+      // 1. Verificación de Idempotencia
+      if (registry.isAlreadyProcessed(key)) {
+        registry.recordDuplicate(key);
+        log.info("// Ejercicio 31: [IDEMPOTENCIA] Orden ya procesada previamente (clave={}, correlationId={}). Omitiendo.", key, cid);
+        return ConsumeResult.duplicateSkipped(key);
+      }
 
-    // 2. Reintentos Limitados con Backoff
-    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        if (failureSimulator != null) {
-          failureSimulator.inspectAndMaybeFail(key, attempt);
-        }
+      registry.markProcessing(key, broker, cid);
 
-        // Ejecución efectiva de cocina
-        if (order != null) {
-          ui.displayOrder(order);
-        }
-
-        registry.markSuccess(key, attempt);
-        log.info("// Ejercicio 30: Orden procesada exitosamente en cocina (clave={}, broker={}, intento={}/{}).",
-            key, broker, attempt, maxAttempts);
-        return ConsumeResult.success(key, attempt);
-
-      } catch (Throwable t) {
-        log.warn("// Ejercicio 30: [RETRY] Intento {}/{} falló al procesar orden {} ({}) vía broker {}: {}",
-            attempt, maxAttempts, key, t.getClass().getSimpleName(), broker, t.getMessage());
-
-        if (attempt < maxAttempts) {
-          if (backoffDelayMs > 0) {
-            try {
-              Thread.sleep(backoffDelayMs);
-            } catch (InterruptedException ie) {
-              Thread.currentThread().interrupt();
-            }
+      // 2. Reintentos Limitados con Backoff
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          if (failureSimulator != null) {
+            failureSimulator.inspectAndMaybeFail(key, attempt);
           }
-        } else {
-          // 3. Reintentos agotados: Desvío a Dead Letter Queue (DLQ)
-          DeadLetterRecord dlqRecord = dlqService.sendToDlq(key, order, broker, attempt, t);
-          registry.markDlq(key, attempt, t.getMessage());
-          log.error("// Ejercicio 30: [DLQ] Reintentos agotados para orden {}. Mensaje enrutado a DLQ (dlqId={}).",
-              key, dlqRecord.getDlqId());
-          return ConsumeResult.failedDlq(key, attempt, dlqRecord.getDlqId(), t.getMessage());
+
+          // Ejecución efectiva de cocina
+          if (order != null) {
+            ui.displayOrder(order);
+          }
+
+          registry.markSuccess(key, attempt, cid);
+          log.info("// Ejercicio 31: Orden procesada exitosamente en cocina (clave={}, correlationId={}, broker={}, intento={}/{}).",
+              key, cid, broker, attempt, maxAttempts);
+          return ConsumeResult.success(key, attempt);
+
+        } catch (Throwable t) {
+          log.warn("// Ejercicio 31: [RETRY] Intento {}/{} falló para orden {} (correlationId={}) vía broker {}: {}",
+              attempt, maxAttempts, key, cid, broker, t.getMessage());
+
+          if (attempt < maxAttempts) {
+            if (backoffDelayMs > 0) {
+              try {
+                Thread.sleep(backoffDelayMs);
+              } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+              }
+            }
+          } else {
+            // 3. Reintentos agotados: Desvío a Dead Letter Queue (DLQ)
+            DeadLetterRecord dlqRecord = dlqService.sendToDlq(key, order, broker, attempt, t, cid);
+            registry.markDlq(key, attempt, t.getMessage(), cid);
+            log.error("// Ejercicio 31: [DLQ] Reintentos agotados para orden {}. Mensaje enrutado a DLQ (dlqId={}, correlationId={}).",
+                key, dlqRecord.getDlqId(), cid);
+            return ConsumeResult.failedDlq(key, attempt, dlqRecord.getDlqId(), t.getMessage());
+          }
         }
       }
-    }
 
-    return ConsumeResult.failedDlq(key, maxAttempts, null, "Reintentos agotados sin resultado");
+      return ConsumeResult.failedDlq(key, maxAttempts, null, "Reintentos agotados sin resultado");
+    } finally {
+      org.slf4j.MDC.remove("correlationId");
+    }
   }
 
   /**
    * Procesa un evento canónico asegurando idempotencia, tolerancia a fallos con reintentos y desvío a DLQ.
    */
   public ConsumeResult consumeEvent(Object event, String broker, String explicitKey) {
+    return consumeEvent(event, broker, explicitKey, null);
+  }
+
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  public ConsumeResult consumeEvent(Object event, String broker, String explicitKey, String correlationId) {
     String key = explicitKey != null && !explicitKey.trim().isEmpty() ? explicitKey.trim() : "evt-" + UUID.randomUUID();
+    String cid = (correlationId != null && !correlationId.trim().isEmpty())
+        ? correlationId.trim()
+        : UUID.randomUUID().toString();
 
-    if (registry.isAlreadyProcessed(key)) {
-      registry.recordDuplicate(key);
-      log.info("// Ejercicio 30: [IDEMPOTENCIA] Evento ya procesado previamente (clave={}). Omitiendo.", key);
-      return ConsumeResult.duplicateSkipped(key);
-    }
+    org.slf4j.MDC.put("correlationId", cid);
+    try {
+      if (registry.isAlreadyProcessed(key)) {
+        registry.recordDuplicate(key);
+        log.info("// Ejercicio 31: [IDEMPOTENCIA] Evento ya procesado previamente (clave={}, correlationId={}). Omitiendo.", key, cid);
+        return ConsumeResult.duplicateSkipped(key);
+      }
 
-    registry.markProcessing(key, broker);
+      registry.markProcessing(key, broker, cid);
 
-    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        if (failureSimulator != null) {
-          failureSimulator.inspectAndMaybeFail(key, attempt);
-        }
-
-        ui.displayOrderEvent(event);
-        registry.markSuccess(key, attempt);
-        return ConsumeResult.success(key, attempt);
-
-      } catch (Throwable t) {
-        log.warn("// Ejercicio 30: [RETRY] Intento {}/{} falló para evento {}: {}", attempt, maxAttempts, key, t.getMessage());
-        if (attempt < maxAttempts) {
-          if (backoffDelayMs > 0) {
-            try {
-              Thread.sleep(backoffDelayMs);
-            } catch (InterruptedException ie) {
-              Thread.currentThread().interrupt();
-            }
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          if (failureSimulator != null) {
+            failureSimulator.inspectAndMaybeFail(key, attempt);
           }
-        } else {
-          DeadLetterRecord dlqRecord = dlqService.sendToDlq(key, event, broker, attempt, t);
-          registry.markDlq(key, attempt, t.getMessage());
-          return ConsumeResult.failedDlq(key, attempt, dlqRecord.getDlqId(), t.getMessage());
+
+          ui.displayOrderEvent(event);
+          registry.markSuccess(key, attempt, cid);
+          return ConsumeResult.success(key, attempt);
+
+        } catch (Throwable t) {
+          log.warn("// Ejercicio 31: [RETRY] Intento {}/{} falló para evento {} (correlationId={}): {}",
+              attempt, maxAttempts, key, cid, t.getMessage());
+          if (attempt < maxAttempts) {
+            if (backoffDelayMs > 0) {
+              try {
+                Thread.sleep(backoffDelayMs);
+              } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+              }
+            }
+          } else {
+            DeadLetterRecord dlqRecord = dlqService.sendToDlq(key, event, broker, attempt, t, cid);
+            registry.markDlq(key, attempt, t.getMessage(), cid);
+            return ConsumeResult.failedDlq(key, attempt, dlqRecord.getDlqId(), t.getMessage());
+          }
         }
       }
-    }
 
-    return ConsumeResult.failedDlq(key, maxAttempts, null, "Reintentos agotados");
+      return ConsumeResult.failedDlq(key, maxAttempts, null, "Reintentos agotados");
+    } finally {
+      org.slf4j.MDC.remove("correlationId");
+    }
   }
 
   /**
@@ -164,20 +197,21 @@ public class IdempotentOrderConsumerEngine {
     String key = dlqRecord.getMessageKey();
     Object payload = dlqRecord.getPayload();
     String broker = dlqRecord.getBroker() != null ? dlqRecord.getBroker() : "REPLAY";
+    String correlationId = dlqRecord.getCorrelationId();
 
     // Reiniciar estado de deduplicación para permitir el reintento
     registry.remove(key);
 
     ConsumeResult result;
     if (payload instanceof TacoOrder) {
-      result = consumeOrder((TacoOrder) payload, broker, key);
+      result = consumeOrder((TacoOrder) payload, broker, key, correlationId);
     } else {
-      result = consumeEvent(payload, broker, key);
+      result = consumeEvent(payload, broker, key, correlationId);
     }
 
     if (result.isSuccess() && result.getStatus() == ProcessStatus.PROCESSED) {
       dlqService.markReplayed(dlqId);
-      log.info("// Ejercicio 30: Mensaje DLQ {} reprocesado exitosamente.", dlqId);
+      log.info("// Ejercicio 31: Mensaje DLQ {} reprocesado exitosamente con correlationId={}.", dlqId, correlationId);
     }
 
     return result;

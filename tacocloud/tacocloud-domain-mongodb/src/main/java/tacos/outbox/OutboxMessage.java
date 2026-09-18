@@ -37,6 +37,12 @@ public class OutboxMessage implements Serializable {
   private String orderId;
 
   /**
+   * Identificador de correlación distribuida de la petición y evento.
+   */
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  private String correlationId;
+
+  /**
    * Tipo de evento de orden según el contrato canónico.
    */
   private OrderEventType eventType;

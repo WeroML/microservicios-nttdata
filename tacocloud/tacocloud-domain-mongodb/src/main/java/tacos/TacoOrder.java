@@ -19,6 +19,9 @@ public class TacoOrder implements Serializable {
   private String id;
   private Date placedAt = new Date();
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  private String correlationId;
+
   private User user;
 
   private String deliveryName;

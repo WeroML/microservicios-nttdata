@@ -27,6 +27,11 @@ public class DeadLetterQueueService {
    * Enruta un mensaje fallido a la Dead Letter Queue tras agotar los reintentos permitidos.
    */
   public DeadLetterRecord sendToDlq(String key, Object payload, String broker, int attempts, Throwable error) {
+    return sendToDlq(key, payload, broker, attempts, error, null);
+  }
+
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  public DeadLetterRecord sendToDlq(String key, Object payload, String broker, int attempts, Throwable error, String correlationId) {
     String dlqId = UUID.randomUUID().toString();
 
     String stackTrace = null;
@@ -40,6 +45,7 @@ public class DeadLetterQueueService {
     DeadLetterRecord record = DeadLetterRecord.builder()
         .dlqId(dlqId)
         .messageKey(key)
+        .correlationId(correlationId)
         .broker(broker)
         .payload(payload)
         .payloadType(payload != null ? payload.getClass().getSimpleName() : "UNKNOWN")
@@ -54,8 +60,8 @@ public class DeadLetterQueueService {
     dlqStore.put(dlqId, record);
     dlqCount.incrementAndGet();
 
-    log.warn("// Ejercicio 30: Mensaje venenoso enrutado a DLQ: dlqId={}, key={}, broker={}, attempts={}, error={}",
-        dlqId, key, broker, attempts, record.getErrorMessage());
+    log.warn("// Ejercicio 31: Mensaje venenoso enrutado a DLQ: dlqId={}, key={}, correlationId={}, broker={}, attempts={}, error={}",
+        dlqId, key, correlationId, broker, attempts, record.getErrorMessage());
 
     return record;
   }

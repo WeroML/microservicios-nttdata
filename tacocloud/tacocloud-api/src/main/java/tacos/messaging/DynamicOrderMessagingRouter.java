@@ -146,26 +146,29 @@ public class DynamicOrderMessagingRouter implements OrderMessagingService {
     }
   }
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @Override
   public void sendOrder(TacoOrder order) {
     OrderMessagingService active = getActiveService();
     if (active != null) {
-      log.info("// Ejercicio 28: Enrutando sendOrder a broker '{}' (orden: {})",
-          this.activeBroker, order != null ? order.getId() : null);
+      log.info("// Ejercicio 31: Enrutando sendOrder a broker '{}' (orden: {}, correlationId: {})",
+          this.activeBroker, order != null ? order.getId() : null, order != null ? order.getCorrelationId() : null);
       active.sendOrder(order);
     } else {
       log.warn("// Ejercicio 28: No hay broker activo disponible para enviar orden");
     }
   }
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @Override
   public void sendOrderEvent(OrderEvent event) {
     OrderMessagingService active = getActiveService();
     if (active != null) {
-      log.info("// Ejercicio 28: Enrutando sendOrderEvent a broker '{}' (evento: [id={}, type={}])",
+      log.info("// Ejercicio 31: Enrutando sendOrderEvent a broker '{}' (evento: [id={}, type={}, correlationId={}])",
           this.activeBroker,
           event != null ? event.getEventId() : null,
-          event != null ? event.getEventType() : null);
+          event != null ? event.getEventType() : null,
+          event != null ? event.getCorrelationId() : null);
       active.sendOrderEvent(event);
     } else {
       log.warn("// Ejercicio 28: No hay broker activo disponible para enviar evento canónico de orden");

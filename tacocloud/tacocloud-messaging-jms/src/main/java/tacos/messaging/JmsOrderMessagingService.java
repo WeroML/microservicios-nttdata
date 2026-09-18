@@ -28,16 +28,25 @@ public class JmsOrderMessagingService implements OrderMessagingService {
     this.jms = jms;
   }
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @Override
   public void sendOrder(TacoOrder order) {
     if (jms != null) {
-      jms.convertAndSend("tacocloud.order.queue", order,
-          this::addOrderSource);
+      jms.convertAndSend("tacocloud.order.queue", order, message -> {
+        addOrderSource(message);
+        if (order != null && order.getCorrelationId() != null) {
+          message.setStringProperty("X_CORRELATION_ID", order.getCorrelationId());
+          message.setJMSCorrelationID(order.getCorrelationId());
+          log.info("// Ejercicio 31: [JMS] Enviando orden {} con correlationId={}", order.getId(), order.getCorrelationId());
+        }
+        return message;
+      });
     } else {
       log.warn("// Ejercicio 28: JmsTemplate not available. Cannot send order: {}", order != null ? order.getId() : null);
     }
   }
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @Override
   public void sendOrderEvent(OrderEvent event) {
     if (event != null) {
@@ -47,6 +56,11 @@ public class JmsOrderMessagingService implements OrderMessagingService {
           message.setStringProperty("X_EVENT_TYPE", event.getEventType() != null ? event.getEventType().name() : "UNKNOWN");
           message.setStringProperty("X_EVENT_VERSION", event.getVersion());
           message.setStringProperty("X_ORDER_SOURCE", event.getSource() != null ? event.getSource() : "WEB");
+          if (event.getCorrelationId() != null) {
+            message.setStringProperty("X_CORRELATION_ID", event.getCorrelationId());
+            message.setJMSCorrelationID(event.getCorrelationId());
+            log.info("// Ejercicio 31: [JMS] Enviando evento {} con correlationId={}", event.getEventId(), event.getCorrelationId());
+          }
           return message;
         });
       } else {

@@ -7,10 +7,12 @@ import java.util.List;
 import lombok.Data;
 
 // Ejercicio 30: Consumidor idempotente, retry limitado y DLQ
+// Ejercicio 31: Correlation ID de HTTP a evento y logs
 @Data
 public class TacoOrder {
 
   private String id;
+  private String correlationId;
   private Date placedAt;
   private String deliveryName;
   private String deliveryStreet;

@@ -28,11 +28,19 @@ public class OrderListener {
     this(ui, null);
   }
 
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @JmsListener(destination = "tacocloud.order.queue")
   public void receiveOrder(TacoOrder order) {
+    receiveOrder(order, null);
+  }
+
+  public void receiveOrder(TacoOrder order, String correlationId) {
     String key = order != null ? order.getId() : null;
+    String cid = (correlationId != null && !correlationId.trim().isEmpty())
+        ? correlationId.trim()
+        : (order != null ? order.getCorrelationId() : null);
     if (consumerEngine != null) {
-      consumerEngine.consumeOrder(order, "JMS", key);
+      consumerEngine.consumeOrder(order, "JMS", key, cid);
     } else if (ui != null) {
       ui.displayOrder(order);
     }

@@ -319,23 +319,28 @@ public class OrderApiController {
                   .flatMap(savedOrder -> {
                     // Ejercicio 27: Contrato único de eventos de orden
                     // Ejercicio 29: Outbox transaccional para no perder órdenes
-                    OrderEvent event = OrderEvent.fromOrder(savedOrder, OrderEventType.fromOrderStatus(savedOrder.getStatus()));
-                    Mono<?> dispatchMono = Mono.empty();
-                    if (outboxService != null) {
-                      dispatchMono = outboxService.enqueueEvent(event);
-                    } else if (orderMessages != null) {
-                      orderMessages.sendOrderEvent(event);
-                    }
+                    // Ejercicio 31: Correlation ID de HTTP a evento y logs
+                    return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
+                        .flatMap(cid -> {
+                          savedOrder.setCorrelationId(cid);
+                          OrderEvent event = OrderEvent.fromOrder(savedOrder, OrderEventType.fromOrderStatus(savedOrder.getStatus()), OrderEvent.DEFAULT_SOURCE, cid);
+                          Mono<?> dispatchMono = Mono.empty();
+                          if (outboxService != null) {
+                            dispatchMono = outboxService.enqueueEvent(event);
+                          } else if (orderMessages != null) {
+                            orderMessages.sendOrderEvent(event);
+                          }
 
-                    return dispatchMono.thenReturn(OrderStatusResponse.builder()
-                        .orderId(savedOrder.getId())
-                        .previousStatus(current)
-                        .currentStatus(savedOrder.getStatus())
-                        .reason(request.getReason())
-                        .updatedAt(new Date())
-                        .allowedNextStates(savedOrder.getStatus().allowedNextStates())
-                        .terminal(savedOrder.getStatus().isTerminal())
-                        .build());
+                          return dispatchMono.thenReturn(OrderStatusResponse.builder()
+                              .orderId(savedOrder.getId())
+                              .previousStatus(current)
+                              .currentStatus(savedOrder.getStatus())
+                              .reason(request.getReason())
+                              .updatedAt(new Date())
+                              .allowedNextStates(savedOrder.getStatus().allowedNextStates())
+                              .terminal(savedOrder.getStatus().isTerminal())
+                              .build());
+                        });
                   });
             }));
   }
@@ -409,26 +414,35 @@ public class OrderApiController {
   }
 
   // Ejercicio 24: Reordenar una compra anterior con reglas actuales
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @PostMapping(path = "/{orderId}/reorder", produces = "application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> reorderOrder(
       @PathVariable("orderId") String orderId,
       @RequestBody(required = false) ReorderRequest reorderRequest,
       Principal principal) {
-    return prepareReorder(orderId, reorderRequest, principal)
-        .flatMap(newOrder -> {
-          if (inventoryService != null) {
-            return inventoryService.reserveInventory(newOrder);
-          }
-          return Mono.just(newOrder);
-        })
-        .flatMap(repo::save)
-        .doOnNext(savedOrder -> {
-          if (orderMessages != null) {
-            orderMessages.sendOrder(savedOrder);
-            orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.ORDER_CREATED));
-          }
-        });
+    return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
+        .flatMap(cid -> prepareReorder(orderId, reorderRequest, principal)
+            .flatMap(newOrder -> {
+              newOrder.setCorrelationId(cid);
+              if (inventoryService != null) {
+                return inventoryService.reserveInventory(newOrder);
+              }
+              return Mono.just(newOrder);
+            })
+            .flatMap(repo::save)
+            .flatMap(savedOrder -> {
+              savedOrder.setCorrelationId(cid);
+              if (outboxService != null) {
+                return outboxService.enqueueOrder(savedOrder, OrderEventType.ORDER_CREATED)
+                    .thenReturn(savedOrder);
+              } else if (orderMessages != null) {
+                orderMessages.sendOrder(savedOrder);
+                orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.ORDER_CREATED, OrderEvent.DEFAULT_SOURCE, cid));
+                return Mono.just(savedOrder);
+              }
+              return Mono.just(savedOrder);
+            }));
   }
 
   // Ejercicio 24: Reordenar una compra anterior con reglas actuales
@@ -556,40 +570,52 @@ public class OrderApiController {
   // Ejercicio 16: Reservar y liberar inventario sin vender aire
   // Ejercicio 18: Taco Physics: reglas componibles de diseño
   // Ejercicio 23: Historial paginado y privado de órdenes
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
   @PostMapping(consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrder(@RequestBody TacoOrder order,
                                   @Autowired(required = false) Principal principal) {
-    Mono<TacoOrder> preparedOrder = (principal != null)
-        ? resolveAuthenticatedUser(principal)
-            .map(user -> {
-              order.setUser(user);
-              return order;
-            })
-            .defaultIfEmpty(order)
-        : Mono.just(order);
+    return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
+        .flatMap(cid -> {
+          if (order.getCorrelationId() == null) {
+            order.setCorrelationId(cid);
+          }
 
-    return preparedOrder
-        .flatMap(this::validateTacoPhysics)
-        .flatMap(this::calculateOrderPrices)
-        .flatMap(ord -> {
-          if (inventoryService != null) {
-            return inventoryService.reserveInventory(ord);
-          }
-          return Mono.just(ord);
-        })
-        .flatMap(repo::save)
-        .flatMap(savedOrder -> {
-          // Ejercicio 29: Outbox transaccional para no perder órdenes
-          if (outboxService != null) {
-            return outboxService.enqueueOrder(savedOrder, OrderEventType.ORDER_CREATED)
-                .thenReturn(savedOrder);
-          } else if (orderMessages != null) {
-            orderMessages.sendOrder(savedOrder);
-            orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.ORDER_CREATED));
-            return Mono.just(savedOrder);
-          }
-          return Mono.just(savedOrder);
+          Mono<TacoOrder> preparedOrder = (principal != null)
+              ? resolveAuthenticatedUser(principal)
+                  .map(user -> {
+                    order.setUser(user);
+                    return order;
+                  })
+                  .defaultIfEmpty(order)
+              : Mono.just(order);
+
+          return preparedOrder
+              .flatMap(this::validateTacoPhysics)
+              .flatMap(this::calculateOrderPrices)
+              .flatMap(ord -> {
+                if (inventoryService != null) {
+                  return inventoryService.reserveInventory(ord);
+                }
+                return Mono.just(ord);
+              })
+              .flatMap(repo::save)
+              .flatMap(savedOrder -> {
+                if (savedOrder.getCorrelationId() == null) {
+                  savedOrder.setCorrelationId(cid);
+                }
+                // Ejercicio 29: Outbox transaccional para no perder órdenes
+                // Ejercicio 31: Correlation ID de HTTP a evento y logs
+                if (outboxService != null) {
+                  return outboxService.enqueueOrder(savedOrder, OrderEventType.ORDER_CREATED)
+                      .thenReturn(savedOrder);
+                } else if (orderMessages != null) {
+                  orderMessages.sendOrder(savedOrder);
+                  orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.ORDER_CREATED, OrderEvent.DEFAULT_SOURCE, cid));
+                  return Mono.just(savedOrder);
+                }
+                return Mono.just(savedOrder);
+              });
         });
   }
 

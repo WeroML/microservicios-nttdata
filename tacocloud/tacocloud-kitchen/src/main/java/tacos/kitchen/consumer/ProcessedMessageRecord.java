@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 // Ejercicio 30: Consumidor idempotente, retry limitado y DLQ
+// Ejercicio 31: Correlation ID de HTTP a evento y logs
 @Data
 @Builder
 @NoArgsConstructor
@@ -15,6 +16,7 @@ import lombok.NoArgsConstructor;
 public class ProcessedMessageRecord {
 
   private String messageKey;
+  private String correlationId;
   private String broker;
   private ProcessStatus status;
   private Date firstReceivedAt;

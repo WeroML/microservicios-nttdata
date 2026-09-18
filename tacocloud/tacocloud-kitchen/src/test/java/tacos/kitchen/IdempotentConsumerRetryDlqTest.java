@@ -34,6 +34,7 @@ import tacos.kitchen.consumer.ProcessStatus;
 import tacos.kitchen.controller.DeadLetterQueueController;
 
 // Ejercicio 30: Consumidor idempotente, retry limitado y DLQ
+// Ejercicio 31: Correlation ID de HTTP a evento y logs
 public class IdempotentConsumerRetryDlqTest {
 
   private KitchenUI mockUi;
@@ -295,6 +296,62 @@ public class IdempotentConsumerRetryDlqTest {
     // DELETE /api/kitchen/dlq/{id}
     ResponseEntity<Void> discardResp = controller.discardDeadLetter(dlqId);
     assertEquals(HttpStatus.NO_CONTENT, discardResp.getStatusCode());
+  }
+
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  @Test
+  @DisplayName("9. Correlation ID: Se propaga a TacoOrder, ProcessedMessageRecord y limpia SLF4J MDC")
+  void testCorrelationId_PropagatedToProcessedRecordAndMdc() {
+    TacoOrder order = createSampleOrder("ORDER-CORR-001", "Cliente Tracing");
+    String cid = "CID-TEST-TRACE-9988";
+
+    ConsumeResult result = consumerEngine.consumeOrder(order, "KAFKA", "ORDER-CORR-001", cid);
+
+    assertTrue(result.isSuccess());
+    assertEquals(cid, order.getCorrelationId());
+
+    Optional<tacos.kitchen.consumer.ProcessedMessageRecord> recordOpt = registry.getRecord("ORDER-CORR-001");
+    assertTrue(recordOpt.isPresent());
+    assertEquals(cid, recordOpt.get().getCorrelationId());
+    assertEquals(ProcessStatus.PROCESSED, recordOpt.get().getStatus());
+
+    // Verificar que MDC fue limpiado adecuadamente
+    assertEquals(null, org.slf4j.MDC.get("correlationId"));
+  }
+
+  // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  @Test
+  @DisplayName("10. Correlation ID: Se persiste en DeadLetterRecord y se preserva en replay")
+  void testCorrelationId_PersistedInDlqAndPreservedInReplay() {
+    TacoOrder poisonOrder = createSampleOrder("ORDER-CORR-POISON", "Cliente Poison");
+    String cid = "CID-POISON-DLQ-7766";
+
+    consumerEngine.setFailureSimulator((key, attempt) -> {
+      throw new RuntimeException("Falla simulada para DLQ con correlationId");
+    });
+
+    ConsumeResult failResult = consumerEngine.consumeOrder(poisonOrder, "RABBITMQ", "ORDER-CORR-POISON", cid);
+    assertFalse(failResult.isSuccess());
+    String dlqId = failResult.getDeadLetterId();
+    assertNotNull(dlqId);
+
+    // Verificar que DeadLetterRecord guardó el correlationId
+    Optional<DeadLetterRecord> dlqOpt = dlqService.getDeadLetter(dlqId);
+    assertTrue(dlqOpt.isPresent());
+    assertEquals(cid, dlqOpt.get().getCorrelationId());
+    assertEquals(DeadLetterStatus.DEAD_LETTER, dlqOpt.get().getStatus());
+
+    // Verificar que MDC se limpió tras el fallo
+    assertEquals(null, org.slf4j.MDC.get("correlationId"));
+
+    // Replay preserva el correlationId
+    consumerEngine.setFailureSimulator(null);
+    ResponseEntity<ConsumeResult> replayResp = controller.replayDeadLetter(dlqId);
+    assertTrue(replayResp.getBody().isSuccess());
+
+    Optional<tacos.kitchen.consumer.ProcessedMessageRecord> processedOpt = registry.getRecord("ORDER-CORR-POISON");
+    assertTrue(processedOpt.isPresent());
+    assertEquals(cid, processedOpt.get().getCorrelationId());
   }
 
 }
