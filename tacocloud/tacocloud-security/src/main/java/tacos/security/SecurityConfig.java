@@ -37,6 +37,13 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         // Páginas y recursos públicos
         .antMatchers("/", "/login", "/register", "/styles/**", "/images/**", "/static/**").permitAll()
         
+        // Ejercicio 33: Reemplazar Notes por anuncios operativos seguros
+        .antMatchers(HttpMethod.POST, "/actuator/announcements/**", "/actuator/notes/**").hasAnyRole("ADMIN", "OPERATOR")
+        .antMatchers(HttpMethod.DELETE, "/actuator/announcements/**", "/actuator/notes/**").hasAnyRole("ADMIN", "OPERATOR")
+        .antMatchers(HttpMethod.GET, "/api/announcements/**").permitAll()
+        .antMatchers(HttpMethod.POST, "/api/announcements/**").hasAnyRole("ADMIN", "OPERATOR")
+        .antMatchers(HttpMethod.DELETE, "/api/announcements/**").hasAnyRole("ADMIN", "OPERATOR")
+
         // Ejercicio 32: Métricas y salud que explican el negocio
         .antMatchers("/actuator/**", "/api/business/**").permitAll()
         

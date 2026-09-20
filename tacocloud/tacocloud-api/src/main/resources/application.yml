@@ -25,11 +25,12 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer    
 
 # Ejercicio 32: Métricas y salud que explican el negocio
+# Ejercicio 33: Reemplazar Notes por anuncios operativos seguros
 management:
   endpoints:
     web:
       exposure:
-        include: health,metrics,info
+        include: health,metrics,info,announcements,notes
   endpoint:
     health:
       show-details: always
