@@ -37,6 +37,9 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         // Páginas y recursos públicos
         .antMatchers("/", "/login", "/register", "/styles/**", "/images/**", "/static/**").permitAll()
         
+        // Ejercicio 32: Métricas y salud que explican el negocio
+        .antMatchers("/actuator/**", "/api/business/**").permitAll()
+        
         // Roles útiles: Modificación de ingredientes protegida por roles
         .antMatchers(HttpMethod.POST, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
         .antMatchers(HttpMethod.PUT, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")

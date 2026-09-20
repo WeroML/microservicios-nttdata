@@ -17,15 +17,24 @@ import tacos.data.IngredientRepository;
 import tacos.data.TacoRepository;
 
 // Ejercicio 16: Reservar y liberar inventario sin vender aire
+// Ejercicio 32: Métricas y salud que explican el negocio
 @Service
 public class InventoryService {
 
   private final IngredientRepository ingredientRepo;
   private final TacoRepository tacoRepo;
+  private final tacos.actuator.BusinessMetricsService metricsService;
 
   public InventoryService(IngredientRepository ingredientRepo, TacoRepository tacoRepo) {
+    this(ingredientRepo, tacoRepo, null);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public InventoryService(IngredientRepository ingredientRepo, TacoRepository tacoRepo,
+                          @org.springframework.beans.factory.annotation.Autowired(required = false) tacos.actuator.BusinessMetricsService metricsService) {
     this.ingredientRepo = ingredientRepo;
     this.tacoRepo = tacoRepo;
+    this.metricsService = metricsService;
   }
 
   /**
@@ -62,6 +71,9 @@ public class InventoryService {
             Ingredient ingredient = entry.getKey();
             int requiredQty = entry.getValue();
             if (!ingredient.hasSufficientStock(requiredQty)) {
+              if (metricsService != null) {
+                metricsService.recordInventoryReservationFailed(ingredient.getId(), requiredQty, "INSUFFICIENT_STOCK");
+              }
               return Mono.error(new ResponseStatusException(HttpStatus.CONFLICT,
                   "Stock insuficiente para el ingrediente '" + ingredient.getName() + "'. Requerido: " + requiredQty + ", disponible: " + (ingredient.getStock() != null ? ingredient.getStock() : 0)));
             }
@@ -72,6 +84,9 @@ public class InventoryService {
               .flatMap(entry -> {
                 Ingredient ingredient = entry.getKey();
                 ingredient.decrementStock(entry.getValue());
+                if (metricsService != null) {
+                  metricsService.recordInventoryReserved(ingredient.getId(), entry.getValue(), "INGREDIENT");
+                }
                 return ingredientRepo.save(ingredient);
               })
               .then(reserveTacoStock(tacoQuantities))
@@ -95,6 +110,9 @@ public class InventoryService {
             Taco taco = entry.getKey();
             int requiredQty = entry.getValue();
             if (taco.getStock() != null && !taco.hasSufficientStock(requiredQty)) {
+              if (metricsService != null) {
+                metricsService.recordInventoryReservationFailed(taco.getId(), requiredQty, "INSUFFICIENT_STOCK");
+              }
               return Mono.error(new ResponseStatusException(HttpStatus.CONFLICT,
                   "Stock insuficiente para el taco '" + taco.getName() + "'. Requerido: " + requiredQty + ", disponible: " + taco.getStock()));
             }
@@ -104,6 +122,9 @@ public class InventoryService {
               .flatMap(entry -> {
                 Taco taco = entry.getKey();
                 taco.decrementStock(entry.getValue());
+                if (metricsService != null) {
+                  metricsService.recordInventoryReserved(taco.getId(), entry.getValue(), "TACO");
+                }
                 return tacoRepo.save(taco);
               })
               .then();
@@ -130,6 +151,9 @@ public class InventoryService {
             ingredientRepo.findById(entry.getKey())
                 .flatMap(ingredient -> {
                   ingredient.incrementStock(entry.getValue());
+                  if (metricsService != null) {
+                    metricsService.recordInventoryReleased(entry.getKey(), entry.getValue(), "INGREDIENT");
+                  }
                   return ingredientRepo.save(ingredient);
                 })
         )
@@ -142,6 +166,9 @@ public class InventoryService {
               tacoRepo.findById(entry.getKey())
                   .flatMap(taco -> {
                     taco.incrementStock(entry.getValue());
+                    if (metricsService != null) {
+                      metricsService.recordInventoryReleased(entry.getKey(), entry.getValue(), "TACO");
+                    }
                     return tacoRepo.save(taco);
                   })
           )

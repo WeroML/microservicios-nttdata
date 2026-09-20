@@ -33,6 +33,8 @@ public class OrderOutboxService implements TransactionalOutboxService {
   private final OutboxRepository outboxRepo;
   private final OrderMessagingService orderMessages;
   private final ObjectMapper objectMapper;
+  // Ejercicio 32: Métricas y salud que explican el negocio
+  private final tacos.actuator.BusinessMetricsService metricsService;
 
   @Value("${tacocloud.outbox.immediate-dispatch:true}")
   private boolean immediateDispatch = true;
@@ -44,17 +46,23 @@ public class OrderOutboxService implements TransactionalOutboxService {
   private boolean scheduledEnabled = false;
 
   public OrderOutboxService(OutboxRepository outboxRepo, OrderMessagingService orderMessages) {
-    this(outboxRepo, orderMessages, new ObjectMapper());
+    this(outboxRepo, orderMessages, new ObjectMapper(), null);
+  }
+
+  public OrderOutboxService(OutboxRepository outboxRepo, OrderMessagingService orderMessages, ObjectMapper objectMapper) {
+    this(outboxRepo, orderMessages, objectMapper, null);
   }
 
   @Autowired
   public OrderOutboxService(
       OutboxRepository outboxRepo,
       @Autowired(required = false) OrderMessagingService orderMessages,
-      @Autowired(required = false) ObjectMapper objectMapper) {
+      @Autowired(required = false) ObjectMapper objectMapper,
+      @Autowired(required = false) tacos.actuator.BusinessMetricsService metricsService) {
     this.outboxRepo = outboxRepo;
     this.orderMessages = orderMessages;
     this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+    this.metricsService = metricsService;
   }
 
   // Ejercicio 31: Correlation ID de HTTP a evento y logs
@@ -113,6 +121,11 @@ public class OrderOutboxService implements TransactionalOutboxService {
           log.info("// Ejercicio 31: Registrando mensaje en Outbox atómico: [eventId={}, orderId={}, correlationId={}, type={}]",
               message.getEventId(), message.getOrderId(), message.getCorrelationId(), message.getEventType());
 
+          // Ejercicio 32: Métricas y salud que explican el negocio
+          if (metricsService != null) {
+            metricsService.recordOutboxEnqueued(message.getEventType());
+          }
+
           return outboxRepo.save(message)
               .flatMap(saved -> {
                 if (immediateDispatch) {
@@ -135,6 +148,9 @@ public class OrderOutboxService implements TransactionalOutboxService {
     if (orderMessages == null) {
       message.setLastError("No hay OrderMessagingService configurado en el sistema");
       message.setRetryCount(message.getRetryCount() + 1);
+      if (metricsService != null) {
+        metricsService.recordOutboxDispatched(message.getTargetBroker(), false);
+      }
       return outboxRepo.save(message);
     }
 
@@ -151,6 +167,10 @@ public class OrderOutboxService implements TransactionalOutboxService {
       message.setStatus(OutboxStatus.PUBLISHED);
       message.setPublishedAt(new Date());
       message.setLastError(null);
+      // Ejercicio 32: Métricas y salud que explican el negocio
+      if (metricsService != null) {
+        metricsService.recordOutboxDispatched(message.getTargetBroker(), true);
+      }
       log.info("// Ejercicio 29: Mensaje de outbox [eventId={}] publicado exitosamente", message.getEventId());
       return outboxRepo.save(message);
 
@@ -159,6 +179,11 @@ public class OrderOutboxService implements TransactionalOutboxService {
       int newRetries = message.getRetryCount() + 1;
       message.setRetryCount(newRetries);
       message.setLastError(ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName());
+
+      // Ejercicio 32: Métricas y salud que explican el negocio
+      if (metricsService != null) {
+        metricsService.recordOutboxDispatched(message.getTargetBroker(), false);
+      }
 
       if (newRetries >= message.getMaxRetries()) {
         message.setStatus(OutboxStatus.DEAD_LETTER);
@@ -216,6 +241,10 @@ public class OrderOutboxService implements TransactionalOutboxService {
         .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Mensaje de outbox no encontrado: " + messageId)))
         .flatMap(msg -> {
           msg.setStatus(OutboxStatus.PENDING);
+          // Ejercicio 32: Métricas y salud que explican el negocio
+          if (metricsService != null) {
+            metricsService.recordOutboxRetried("MANUAL");
+          }
           return tryDispatch(msg);
         });
   }

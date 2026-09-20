@@ -71,11 +71,13 @@ public class OrderApiController {
   private KitchenService kitchenService;
   // Ejercicio 29: Outbox transaccional para no perder órdenes
   private tacos.outbox.TransactionalOutboxService outboxService;
+  // Ejercicio 32: Métricas y salud que explican el negocio
+  private tacos.actuator.BusinessMetricsService metricsService;
 
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
                             EmailOrderService emailOrderService) {
-    this(repo, orderMessages, emailOrderService, null, null, null, null, null, null, null, null);
+    this(repo, orderMessages, emailOrderService, null, null, null, null, null, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -83,7 +85,7 @@ public class OrderApiController {
                             EmailOrderService emailOrderService,
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null, null, null, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, null, null, null, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -92,7 +94,7 @@ public class OrderApiController {
                             IngredientRepository ingredientRepo,
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null, null, null, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, null, null, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -102,7 +104,7 @@ public class OrderApiController {
                             TacoRepository tacoRepo,
                             CouponEngine couponEngine,
                             InventoryService inventoryService) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, null, null, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, null, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -113,7 +115,7 @@ public class OrderApiController {
                             CouponEngine couponEngine,
                             InventoryService inventoryService,
                             TacoPhysicsEngine physicsEngine) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, null, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, null, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -125,7 +127,7 @@ public class OrderApiController {
                             InventoryService inventoryService,
                             TacoPhysicsEngine physicsEngine,
                             UserRepository userRepo) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, userRepo, null, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, userRepo, null, null, null);
   }
 
   public OrderApiController(OrderRepository repo,
@@ -138,7 +140,21 @@ public class OrderApiController {
                             TacoPhysicsEngine physicsEngine,
                             UserRepository userRepo,
                             KitchenService kitchenService) {
-    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, userRepo, kitchenService, null);
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, userRepo, kitchenService, null, null);
+  }
+
+  public OrderApiController(OrderRepository repo,
+                            OrderMessagingService orderMessages,
+                            EmailOrderService emailOrderService,
+                            IngredientRepository ingredientRepo,
+                            TacoRepository tacoRepo,
+                            CouponEngine couponEngine,
+                            InventoryService inventoryService,
+                            TacoPhysicsEngine physicsEngine,
+                            UserRepository userRepo,
+                            KitchenService kitchenService,
+                            tacos.outbox.TransactionalOutboxService outboxService) {
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, userRepo, kitchenService, outboxService, null);
   }
 
   @Autowired
@@ -152,7 +168,8 @@ public class OrderApiController {
                             TacoPhysicsEngine physicsEngine,
                             @Autowired(required = false) UserRepository userRepo,
                             @Autowired(required = false) KitchenService kitchenService,
-                            @Autowired(required = false) tacos.outbox.TransactionalOutboxService outboxService) {
+                            @Autowired(required = false) tacos.outbox.TransactionalOutboxService outboxService,
+                            @Autowired(required = false) tacos.actuator.BusinessMetricsService metricsService) {
     this.repo = repo;
     this.orderMessages = orderMessages;
     this.emailOrderService = emailOrderService;
@@ -164,6 +181,7 @@ public class OrderApiController {
     this.userRepo = userRepo;
     this.kitchenService = kitchenService != null ? kitchenService : new KitchenService(repo);
     this.outboxService = outboxService;
+    this.metricsService = metricsService;
   }
 
   public void setOutboxService(tacos.outbox.TransactionalOutboxService outboxService) {
@@ -320,6 +338,15 @@ public class OrderApiController {
                     // Ejercicio 27: Contrato único de eventos de orden
                     // Ejercicio 29: Outbox transaccional para no perder órdenes
                     // Ejercicio 31: Correlation ID de HTTP a evento y logs
+                    // Ejercicio 32: Métricas y salud que explican el negocio
+                    if (metricsService != null) {
+                      metricsService.recordOrderStatusTransition(savedOrder.getId(), current, savedOrder.getStatus());
+                      if (savedOrder.getStatus() == OrderStatus.CANCELLED) {
+                        String role = isUserAdmin(principal) ? "ROLE_ADMIN" : "ROLE_USER";
+                        metricsService.recordOrderCancelled(savedOrder.getId(), current, role);
+                      }
+                    }
+
                     return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
                         .flatMap(cid -> {
                           savedOrder.setCorrelationId(cid);
@@ -603,6 +630,10 @@ public class OrderApiController {
               .flatMap(savedOrder -> {
                 if (savedOrder.getCorrelationId() == null) {
                   savedOrder.setCorrelationId(cid);
+                }
+                // Ejercicio 32: Métricas y salud que explican el negocio
+                if (metricsService != null) {
+                  metricsService.recordOrderPlaced(savedOrder);
                 }
                 // Ejercicio 29: Outbox transaccional para no perder órdenes
                 // Ejercicio 31: Correlation ID de HTTP a evento y logs

@@ -23,6 +23,20 @@ spring:
     producer:
       key-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer    
+
+# Ejercicio 32: Métricas y salud que explican el negocio
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      simple:
+        enabled: true
 ---
 # None of these properties will actually work as configured for this profile.
 # But it is left here as an example of configuring for a production profile
