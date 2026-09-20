@@ -14,8 +14,9 @@ import reactor.core.publisher.Mono;
 import tacos.web.api.CouponEngine.CouponValidationResult;
 
 // Ejercicio 15: Motor de cupones con reglas y fecha de expiración
+// Ejercicio 35: Versionar la API y publicar contrato OpenAPI
 @RestController
-@RequestMapping(path="/api/coupons", produces="application/json")
+@RequestMapping(path={"/api/v1/coupons", "/api/coupons"}, produces="application/json")
 @CrossOrigin(origins="http://localhost:8080")
 public class CouponController {
 

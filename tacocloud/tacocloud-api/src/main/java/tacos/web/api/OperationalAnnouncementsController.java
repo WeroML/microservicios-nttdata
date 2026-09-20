@@ -27,8 +27,9 @@ import tacos.web.api.dto.AnnouncementResponse;
 import tacos.web.api.dto.CreateAnnouncementRequest;
 
 // Ejercicio 33: Reemplazar Notes por anuncios operativos seguros
+// Ejercicio 35: Versionar la API y publicar contrato OpenAPI
 @RestController
-@RequestMapping(path = "/api/announcements", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(path = {"/api/v1/announcements", "/api/announcements"}, produces = MediaType.APPLICATION_JSON_VALUE)
 @CrossOrigin(origins = "*")
 public class OperationalAnnouncementsController {
 

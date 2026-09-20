@@ -33,8 +33,9 @@ import tacos.web.api.dto.TacoRequest;
 import tacos.web.api.dto.TacoResponse;
 import tacos.web.api.dto.TacoSearchCriteria;
 
+// Ejercicio 35: Versionar la API y publicar contrato OpenAPI
 @RestController
-@RequestMapping(path = "/api/tacos", produces = "application/json")
+@RequestMapping(path = {"/api/v1/tacos", "/api/tacos"}, produces = "application/json")
 @CrossOrigin(origins="http://localhost:8080")
 public class TacoController {
   private TacoRepository tacoRepo;

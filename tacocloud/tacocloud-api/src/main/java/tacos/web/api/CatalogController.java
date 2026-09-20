@@ -20,8 +20,9 @@ import tacos.data.TacoRepository;
 
 // Ejercicio 13: Catálogo con precio, disponibilidad y stock
 // Ejercicio 17: Etiquetas dietarias, alérgenos y nivel de picante
+// Ejercicio 35: Versionar la API y publicar contrato OpenAPI
 @RestController
-@RequestMapping(path = "/api/catalog", produces = "application/json")
+@RequestMapping(path = {"/api/v1/catalog", "/api/catalog"}, produces = "application/json")
 @CrossOrigin(origins = "http://localhost:8080")
 public class CatalogController {
 

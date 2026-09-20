@@ -31,42 +31,51 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         // Preflight CORS para frontend (Angular)
         .antMatchers(HttpMethod.OPTIONS).permitAll()
         
-        // Catálogo público de solo lectura (Ejercicio 13 & 15: Catálogo y Cupones)
-        .antMatchers(HttpMethod.GET, "/api/ingredients/**", "/api/tacos/**", "/api/catalog/**", "/api/coupons/**").permitAll()
+        // Ejercicio 35: Versionar la API y publicar contrato OpenAPI
+        // Contrato OpenAPI, Swagger UI y Metadatos de versiones públicos
+        .antMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/api/openapi.*", "/api/versions").permitAll()
+
+        // Catálogo público de solo lectura (Ejercicio 13 & 15 & 35: Catálogo, Cupones y Versionado)
+        .antMatchers(HttpMethod.GET,
+            "/api/ingredients/**", "/api/v1/ingredients/**",
+            "/api/tacos/**", "/api/v1/tacos/**",
+            "/api/catalog/**", "/api/v1/catalog/**",
+            "/api/coupons/**", "/api/v1/coupons/**").permitAll()
         
         // Páginas y recursos públicos
         .antMatchers("/", "/login", "/register", "/styles/**", "/images/**", "/static/**").permitAll()
         
-        // Ejercicio 33: Reemplazar Notes por anuncios operativos seguros
+        // Ejercicio 33 & 35: Reemplazar Notes por anuncios operativos seguros (v1 y legacy)
         .antMatchers(HttpMethod.POST, "/actuator/announcements/**", "/actuator/notes/**").hasAnyRole("ADMIN", "OPERATOR")
         .antMatchers(HttpMethod.DELETE, "/actuator/announcements/**", "/actuator/notes/**").hasAnyRole("ADMIN", "OPERATOR")
-        .antMatchers(HttpMethod.GET, "/api/announcements/**").permitAll()
-        .antMatchers(HttpMethod.POST, "/api/announcements/**").hasAnyRole("ADMIN", "OPERATOR")
-        .antMatchers(HttpMethod.DELETE, "/api/announcements/**").hasAnyRole("ADMIN", "OPERATOR")
+        .antMatchers(HttpMethod.GET, "/api/announcements/**", "/api/v1/announcements/**").permitAll()
+        .antMatchers(HttpMethod.POST, "/api/announcements/**", "/api/v1/announcements/**").hasAnyRole("ADMIN", "OPERATOR")
+        .antMatchers(HttpMethod.DELETE, "/api/announcements/**", "/api/v1/announcements/**").hasAnyRole("ADMIN", "OPERATOR")
 
         // Ejercicio 32: Métricas y salud que explican el negocio
         .antMatchers("/actuator/**", "/api/business/**").permitAll()
         
         // Roles útiles: Modificación de ingredientes protegida por roles
-        .antMatchers(HttpMethod.POST, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
-        .antMatchers(HttpMethod.PUT, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
-        .antMatchers(HttpMethod.PATCH, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
-        .antMatchers(HttpMethod.DELETE, "/api/ingredients/**").hasAnyRole("ADMIN", "USER")
+        .antMatchers(HttpMethod.POST, "/api/ingredients/**", "/api/v1/ingredients/**").hasAnyRole("ADMIN", "USER")
+        .antMatchers(HttpMethod.PUT, "/api/ingredients/**", "/api/v1/ingredients/**").hasAnyRole("ADMIN", "USER")
+        .antMatchers(HttpMethod.PATCH, "/api/ingredients/**", "/api/v1/ingredients/**").hasAnyRole("ADMIN", "USER")
+        .antMatchers(HttpMethod.DELETE, "/api/ingredients/**", "/api/v1/ingredients/**").hasAnyRole("ADMIN", "USER")
         
         // Roles útiles: Creación y gestión de órdenes (USER y ADMIN para cocina y estados)
         // Ejercicio 25: Flujo de estados de una orden
-        .antMatchers("/api/orders/**").hasAnyRole("USER", "ADMIN")
-        .antMatchers(HttpMethod.POST, "/api/tacos/**").hasRole("USER")
+        // Ejercicio 35: Versionado v1 y v2 de órdenes
+        .antMatchers("/api/orders/**", "/api/v1/orders/**", "/api/v2/orders/**").hasAnyRole("USER", "ADMIN")
+        .antMatchers(HttpMethod.POST, "/api/tacos/**", "/api/v1/tacos/**").hasRole("USER")
         // Ejercicio 21: Favoritos por usuario sin confiar en userId del cliente
-        .antMatchers("/api/favorites/**").hasRole("USER")
+        .antMatchers("/api/favorites/**", "/api/v1/favorites/**").hasRole("USER")
         // Ejercicio 22: Calificaciones y ranking de tacos
-        .antMatchers(HttpMethod.DELETE, "/api/tacos/**").hasRole("USER")
+        .antMatchers(HttpMethod.DELETE, "/api/tacos/**", "/api/v1/tacos/**").hasRole("USER")
         // Ejercicio 26: Cola de cocina, claim atómico y tiempo estimado
-        .antMatchers("/api/kitchen/**").hasRole("ADMIN")
+        .antMatchers("/api/kitchen/**", "/api/v1/kitchen/**").hasRole("ADMIN")
         // Ejercicio 28: Elegir broker en runtime, no editando el POM
-        .antMatchers("/api/messaging/**").hasRole("ADMIN")
+        .antMatchers("/api/messaging/**", "/api/v1/messaging/**").hasRole("ADMIN")
         // Ejercicio 29: Outbox transaccional para no perder órdenes
-        .antMatchers("/api/outbox/**").hasRole("ADMIN")
+        .antMatchers("/api/outbox/**", "/api/v1/outbox/**").hasRole("ADMIN")
         
         // Principio DENY-BY-DEFAULT: Cualquier otra ruta exige autenticación
         .anyRequest().authenticated()

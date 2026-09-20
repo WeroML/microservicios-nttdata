@@ -48,8 +48,9 @@ import tacos.web.api.dto.PagedResponse;
 import tacos.web.api.dto.ReorderRequest;
 import tacos.web.api.dto.UpdateOrderStatusRequest;
 
+// Ejercicio 35: Versionar la API y publicar contrato OpenAPI
 @RestController
-@RequestMapping(path="/api/orders",
+@RequestMapping(path={"/api/v1/orders", "/api/orders"},
                 produces="application/json")
 @CrossOrigin(origins="http://localhost:8080")
 public class OrderApiController {

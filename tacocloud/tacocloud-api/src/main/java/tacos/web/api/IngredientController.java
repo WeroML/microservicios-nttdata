@@ -26,8 +26,9 @@ import reactor.core.publisher.Mono;
 import tacos.Ingredient;
 import tacos.data.IngredientRepository;
 
+// Ejercicio 35: Versionar la API y publicar contrato OpenAPI
 @RestController
-@RequestMapping(path="/api/ingredients", produces="application/json")
+@RequestMapping(path={"/api/v1/ingredients", "/api/ingredients"}, produces="application/json")
 @CrossOrigin(origins="http://localhost:8080")
 public class IngredientController {
 
