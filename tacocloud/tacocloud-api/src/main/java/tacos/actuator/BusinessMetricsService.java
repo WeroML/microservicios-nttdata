@@ -126,6 +126,22 @@ public class BusinessMetricsService {
     log.debug("// Ejercicio 32: Métrica registrada - Reintento de outbox: trigger={}", trigger);
   }
 
+  // Ejercicio 34: Idempotency-Key en creación de órdenes
+  public void recordIdempotencyHit(String key) {
+    meterRegistry.counter("tacocloud.orders.idempotent.hits").increment();
+    log.info("// Ejercicio 34: Métrica registrada - Idempotency Cache HIT para key={}", key);
+  }
+
+  public void recordIdempotencyMiss(String key) {
+    meterRegistry.counter("tacocloud.orders.idempotent.misses").increment();
+    log.debug("// Ejercicio 34: Métrica registrada - Idempotency Cache MISS para key={}", key);
+  }
+
+  public void recordIdempotencyConflict(String key) {
+    meterRegistry.counter("tacocloud.orders.idempotent.conflicts").increment();
+    log.warn("// Ejercicio 34: Métrica registrada - Idempotency Conflict para key={}", key);
+  }
+
   // ==========================================
   // Resumen y utilidades
   // ==========================================
@@ -141,6 +157,9 @@ public class BusinessMetricsService {
     double outboxEnqueued = sumCounter("tacocloud.outbox.enqueued");
     double outboxDispatched = sumCounter("tacocloud.outbox.dispatched");
     double outboxRetried = sumCounter("tacocloud.outbox.retried");
+    double idempHits = sumCounter("tacocloud.orders.idempotent.hits");
+    double idempMisses = sumCounter("tacocloud.orders.idempotent.misses");
+    double idempConflicts = sumCounter("tacocloud.orders.idempotent.conflicts");
 
     summary.put("ordersPlaced", (long) ordersPlaced);
     summary.put("ordersCancelled", (long) ordersCancelled);
@@ -150,6 +169,9 @@ public class BusinessMetricsService {
     summary.put("outboxEnqueued", (long) outboxEnqueued);
     summary.put("outboxDispatched", (long) outboxDispatched);
     summary.put("outboxRetried", (long) outboxRetried);
+    summary.put("idempotentHits", (long) idempHits);
+    summary.put("idempotentMisses", (long) idempMisses);
+    summary.put("idempotentConflicts", (long) idempConflicts);
 
     return summary;
   }

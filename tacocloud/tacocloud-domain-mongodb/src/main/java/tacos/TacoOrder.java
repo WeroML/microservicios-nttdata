@@ -22,6 +22,9 @@ public class TacoOrder implements Serializable {
   // Ejercicio 31: Correlation ID de HTTP a evento y logs
   private String correlationId;
 
+  // Ejercicio 34: Idempotency-Key en creación de órdenes
+  private String idempotencyKey;
+
   private User user;
 
   private String deliveryName;

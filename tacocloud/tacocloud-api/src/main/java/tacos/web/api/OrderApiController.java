@@ -73,6 +73,8 @@ public class OrderApiController {
   private tacos.outbox.TransactionalOutboxService outboxService;
   // Ejercicio 32: Métricas y salud que explican el negocio
   private tacos.actuator.BusinessMetricsService metricsService;
+  // Ejercicio 34: Idempotency-Key en creación de órdenes
+  private tacos.idempotency.OrderIdempotencyService idempotencyService;
 
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
@@ -157,6 +159,21 @@ public class OrderApiController {
     this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, userRepo, kitchenService, outboxService, null);
   }
 
+  public OrderApiController(OrderRepository repo,
+                            OrderMessagingService orderMessages,
+                            EmailOrderService emailOrderService,
+                            IngredientRepository ingredientRepo,
+                            TacoRepository tacoRepo,
+                            CouponEngine couponEngine,
+                            InventoryService inventoryService,
+                            TacoPhysicsEngine physicsEngine,
+                            UserRepository userRepo,
+                            KitchenService kitchenService,
+                            tacos.outbox.TransactionalOutboxService outboxService,
+                            tacos.actuator.BusinessMetricsService metricsService) {
+    this(repo, orderMessages, emailOrderService, ingredientRepo, tacoRepo, couponEngine, inventoryService, physicsEngine, userRepo, kitchenService, outboxService, metricsService, null);
+  }
+
   @Autowired
   public OrderApiController(OrderRepository repo,
                             OrderMessagingService orderMessages,
@@ -169,7 +186,8 @@ public class OrderApiController {
                             @Autowired(required = false) UserRepository userRepo,
                             @Autowired(required = false) KitchenService kitchenService,
                             @Autowired(required = false) tacos.outbox.TransactionalOutboxService outboxService,
-                            @Autowired(required = false) tacos.actuator.BusinessMetricsService metricsService) {
+                            @Autowired(required = false) tacos.actuator.BusinessMetricsService metricsService,
+                            @Autowired(required = false) tacos.idempotency.OrderIdempotencyService idempotencyService) {
     this.repo = repo;
     this.orderMessages = orderMessages;
     this.emailOrderService = emailOrderService;
@@ -182,10 +200,20 @@ public class OrderApiController {
     this.kitchenService = kitchenService != null ? kitchenService : new KitchenService(repo);
     this.outboxService = outboxService;
     this.metricsService = metricsService;
+    this.idempotencyService = idempotencyService != null ? idempotencyService : new tacos.idempotency.OrderIdempotencyService(null, metricsService);
   }
 
   public void setOutboxService(tacos.outbox.TransactionalOutboxService outboxService) {
     this.outboxService = outboxService;
+  }
+
+  // Ejercicio 34: Idempotency-Key en creación de órdenes
+  public void setIdempotencyService(tacos.idempotency.OrderIdempotencyService idempotencyService) {
+    this.idempotencyService = idempotencyService;
+  }
+
+  public tacos.idempotency.OrderIdempotencyService getIdempotencyService() {
+    return idempotencyService;
   }
 
   // Ejercicio 23: Historial paginado y privado de órdenes
@@ -597,11 +625,61 @@ public class OrderApiController {
   // Ejercicio 16: Reservar y liberar inventario sin vender aire
   // Ejercicio 18: Taco Physics: reglas componibles de diseño
   // Ejercicio 23: Historial paginado y privado de órdenes
+  // Ejercicio 34: Idempotency-Key en creación de órdenes
+  public Mono<TacoOrder> postOrder(TacoOrder order, Principal principal) {
+    return postOrder(order, principal, (org.springframework.web.server.ServerWebExchange) null);
+  }
+
+  // Ejercicio 14: Calcular precios y cantidades del lado servidor
+  // Ejercicio 16: Reservar y liberar inventario sin vender aire
+  // Ejercicio 18: Taco Physics: reglas componibles de diseño
+  // Ejercicio 23: Historial paginado y privado de órdenes
   // Ejercicio 31: Correlation ID de HTTP a evento y logs
+  // Ejercicio 34: Idempotency-Key en creación de órdenes
   @PostMapping(consumes="application/json")
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<TacoOrder> postOrder(@RequestBody TacoOrder order,
-                                  @Autowired(required = false) Principal principal) {
+                                  @Autowired(required = false) Principal principal,
+                                  @Autowired(required = false) org.springframework.web.server.ServerWebExchange exchange) {
+    if (order == null) {
+      return Mono.empty();
+    }
+
+    final String key = (idempotencyService != null && exchange != null)
+        ? idempotencyService.extractIdempotencyKey(exchange)
+        : order.getIdempotencyKey();
+
+    if (key != null && order.getIdempotencyKey() == null) {
+      order.setIdempotencyKey(key);
+    }
+
+    if (key != null && idempotencyService != null) {
+      String userId = (principal != null) ? principal.getName() : "anonymous";
+      String currentHash = idempotencyService.computePayloadHash(order);
+
+      return idempotencyService.tryAcquireOrReplay(key, userId, currentHash)
+          .flatMap(resolution -> {
+            if (resolution.isReplay()) {
+              if (exchange != null) {
+                exchange.getResponse().getHeaders().set(tacos.idempotency.OrderIdempotencyService.HEADER_IDEMPOTENCY_KEY, key);
+                exchange.getResponse().getHeaders().set(tacos.idempotency.OrderIdempotencyService.HEADER_IDEMPOTENCY_REPLAYED, "true");
+              }
+              return Mono.just(resolution.getCachedOrder());
+            }
+
+            return executeOrderCreationPipeline(order, principal, exchange, key)
+                .doOnError(err -> idempotencyService.releaseOnError(key).subscribe());
+          });
+    }
+
+    return executeOrderCreationPipeline(order, principal, exchange, null);
+  }
+
+  private Mono<TacoOrder> executeOrderCreationPipeline(
+      TacoOrder order,
+      Principal principal,
+      org.springframework.web.server.ServerWebExchange exchange,
+      String idempotencyKey) {
     return tacos.web.api.correlation.CorrelationIdSupport.getCorrelationId()
         .flatMap(cid -> {
           if (order.getCorrelationId() == null) {
@@ -631,21 +709,34 @@ public class OrderApiController {
                 if (savedOrder.getCorrelationId() == null) {
                   savedOrder.setCorrelationId(cid);
                 }
+                if (idempotencyKey != null && savedOrder.getIdempotencyKey() == null) {
+                  savedOrder.setIdempotencyKey(idempotencyKey);
+                }
                 // Ejercicio 32: Métricas y salud que explican el negocio
                 if (metricsService != null) {
                   metricsService.recordOrderPlaced(savedOrder);
                 }
                 // Ejercicio 29: Outbox transaccional para no perder órdenes
                 // Ejercicio 31: Correlation ID de HTTP a evento y logs
+                Mono<TacoOrder> dispatchMono = Mono.just(savedOrder);
                 if (outboxService != null) {
-                  return outboxService.enqueueOrder(savedOrder, OrderEventType.ORDER_CREATED)
+                  dispatchMono = outboxService.enqueueOrder(savedOrder, OrderEventType.ORDER_CREATED)
                       .thenReturn(savedOrder);
                 } else if (orderMessages != null) {
                   orderMessages.sendOrder(savedOrder);
                   orderMessages.sendOrderEvent(OrderEvent.fromOrder(savedOrder, OrderEventType.ORDER_CREATED, OrderEvent.DEFAULT_SOURCE, cid));
-                  return Mono.just(savedOrder);
                 }
-                return Mono.just(savedOrder);
+
+                return dispatchMono.flatMap(finalOrder -> {
+                  if (exchange != null && idempotencyKey != null) {
+                    exchange.getResponse().getHeaders().set(tacos.idempotency.OrderIdempotencyService.HEADER_IDEMPOTENCY_KEY, idempotencyKey);
+                  }
+                  if (idempotencyKey != null && idempotencyService != null) {
+                    return idempotencyService.completeIdempotency(idempotencyKey, finalOrder)
+                        .thenReturn(finalOrder);
+                  }
+                  return Mono.just(finalOrder);
+                });
               });
         });
   }
